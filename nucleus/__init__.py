@@ -75,5 +75,5 @@ class VesicleStateError(Exception):
 
 # Import at bottom to avoid circular imports
 # Import all models to allow querying db binds
-from .models import *
-from vesicle import Vesicle
+# from .models import *
+# from vesicle import Vesicle

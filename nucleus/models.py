@@ -8,7 +8,6 @@ from flask import url_for, session
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
-from sqlalchemy import ForeignKey
 from uuid import uuid4
 
 from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
@@ -1247,7 +1246,7 @@ class PicturePlanet(Planet):
     _insert_required = ["id", "title", "created", "modified", "source", "filename", "kind"]
     _update_required = ["id", "title", "modified", "source", "filename"]
 
-    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     filename = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1277,7 +1276,7 @@ class LinkedPicturePlanet(Planet):
     _insert_required = ["id", "title", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     url = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1308,7 +1307,7 @@ class LinkPlanet(Planet):
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     url = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1339,7 +1338,7 @@ class TextPlanet(Planet):
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "text", "kind"]
     _update_required = ["id", "title", "modified", "source", "text"]
 
-    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     text = db.Column(db.Text)
 
     __mapper_args__ = {
