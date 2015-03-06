@@ -5,6 +5,7 @@ import semantic_version
 
 from base64 import b64encode, b64decode
 from flask import url_for, session, current_app
+from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from sqlalchemy import ForeignKey
@@ -14,6 +15,8 @@ from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES, logger
 from .helpers import epoch_seconds
+
+from glia.database import db
 
 request_objects = notification_signals.signal('request-objects')
 
@@ -138,14 +141,75 @@ class Serializable():
         raise NotImplementedError()
 
 
-t_identity_vesicles = current_app.db.Table(
+class PersonaAssociation(db.Model):
+    """Connects user accounts and personas"""
+    __tablename__ = "persona_association"
+    left_id = db.Column(db.String(32), db.ForeignKey('user.id'), primary_key=True)
+    right_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
+    active = db.Column(db.Boolean(), default=False)
+    persona = db.relationship("Persona", backref="associations")
+
+
+class User(UserMixin, db.Model):
+    """A user of the website"""
+
+    __tablename__ = 'user'
+    id = db.Column(db.String(32), primary_key=True, default=uuid4().hex)
+    email = db.Column(db.String(128))
+    created = db.Column(db.DateTime)
+    modified = db.Column(db.DateTime)
+    pw_hash = db.Column(db.String(32))
+    active = db.Column(db.Boolean, default=True)
+    authenticated = db.Column(db.Boolean(), default=True)
+    associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
+
+    def check_password(self, password):
+        """Return True if password matches user password
+
+        Args:
+            password (String): Password entered by user in login form
+        """
+        pw_hash = sha256(password).hexdigest()
+        return self.pw_hash == pw_hash
+
+    def set_password(self, password):
+        """Set password to a new value
+
+        Args:
+            password (String): Plaintext value of the new password
+        """
+        pw_hash = sha256(password).hexdigest()
+        self.pw_hash = pw_hash
+
+    def get_id(self):
+        return self.id
+
+    def is_authenticated(self):
+        return self.authenticated
+
+    def is_active(self):
+        return self.active
+
+    def is_anonymous(self):
+        return False
+
+    @property
+    def active_persona(self):
+        try:
+            return self.associations.filter_by(active=True).first().persona
+        except AttributeError:
+            # no persona associated
+            return None
+
+
+t_identity_vesicles = db.Table(
     'identity_vesicles',
-    current_app.db.Column('identity_id', current_app.db.String(32), current_app.db.ForeignKey('identity.id')),
-    current_app.db.Column('vesicle_id', current_app.db.String(32), current_app.db.ForeignKey('vesicle.id'))
+    db.Column('identity_id', db.String(32), db.ForeignKey('identity.id')),
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Identity(Serializable, current_app.db.Model):
+class Identity(Serializable, db.Model):
     """Abstract identity, superclass of Persona and Group
 
     Attributes:
@@ -167,24 +231,24 @@ class Identity(Serializable, current_app.db.Model):
     _insert_required = ["id", "username", "crypt_public", "sign_public", "modified", "profile_id"]
     _update_required = ["id", "modified"]
 
-    _stub = current_app.db.Column(current_app.db.Boolean, default=False)
-    id = current_app.db.Column(current_app.db.String(32), primary_key=True)
-    kind = current_app.db.Column(current_app.db.String(32))
-    modified = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
-    username = current_app.db.Column(current_app.db.String(80))
-    crypt_private = current_app.db.Column(current_app.db.Text)
-    crypt_public = current_app.db.Column(current_app.db.Text)
-    sign_private = current_app.db.Column(current_app.db.Text)
-    sign_public = current_app.db.Column(current_app.db.Text)
+    _stub = db.Column(db.Boolean, default=False)
+    id = db.Column(db.String(32), primary_key=True)
+    kind = db.Column(db.String(32))
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    username = db.Column(db.String(80))
+    crypt_private = db.Column(db.Text)
+    crypt_public = db.Column(db.Text)
+    sign_private = db.Column(db.Text)
+    sign_public = db.Column(db.Text)
 
-    vesicles = current_app.db.relationship(
+    vesicles = db.relationship(
         'Vesicle',
         secondary='identity_vesicles',
         primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
         secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
-    profile_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('starmap.id'))
-    profile = current_app.db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.profile_id')
+    profile_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    profile = db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.profile_id')
 
     __mapper_args__ = {
         'polymorphic_identity': 'identity',
@@ -361,15 +425,15 @@ class Identity(Serializable, current_app.db.Model):
 # Setup follower relationship on Persona objects
 #
 
-t_contacts = current_app.db.Table('contacts',
-    current_app.db.Column('left_id', current_app.db.String(32), current_app.db.ForeignKey('persona.id')),
-    current_app.db.Column('right_id', current_app.db.String(32), current_app.db.ForeignKey('persona.id')),
-    current_app.db.UniqueConstraint('left_id', 'right_id', name='_uc_contacts')
+t_contacts = db.Table('contacts',
+    db.Column('left_id', db.String(32), db.ForeignKey('persona.id')),
+    db.Column('right_id', db.String(32), db.ForeignKey('persona.id')),
+    db.UniqueConstraint('left_id', 'right_id', name='_uc_contacts')
 )
 
-t_groups_followed = current_app.db.Table('groups_followed',
-    current_app.db.Column('persona_id', current_app.db.String(32), current_app.db.ForeignKey('persona.id')),
-    current_app.db.Column('group_id', current_app.db.String(32), current_app.db.ForeignKey('group.id'))
+t_groups_followed = db.Table('groups_followed',
+    db.Column('persona_id', db.String(32), db.ForeignKey('persona.id')),
+    db.Column('group_id', db.String(32), db.ForeignKey('group.id'))
 )
 
 
@@ -390,26 +454,28 @@ class Persona(Identity):
     _insert_required = Identity._insert_required + ["email", "index_id", "contacts", "groups"]
     _update_required = Identity._update_required
 
-    id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('identity.id'), primary_key=True)
-    email = current_app.db.Column(current_app.db.String(120))
+    id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
+    email = db.Column(db.String(120))
+    session_id = db.Column(db.String(32), default=uuid4().hex)
+    last_connected = db.Column(db.DateTime, default=datetime.datetime.now())
 
-    contacts = current_app.db.relationship('Persona',
+    contacts = db.relationship('Persona',
         secondary='contacts',
         lazy="dynamic",
         remote_side='contacts.c.right_id',
         primaryjoin='contacts.c.left_id==persona.c.id',
         secondaryjoin='contacts.c.right_id==persona.c.id')
 
-    groups_followed = current_app.db.relationship('Group',
+    groups_followed = db.relationship('Group',
         secondary='groups_followed',
         primaryjoin='groups_followed.c.persona_id==persona.c.id',
         secondaryjoin='groups_followed.c.group_id==group.c.id')
 
-    index_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('starmap.id'))
-    index = current_app.db.relationship('Starmap', primaryjoin='starmap.c.id==persona.c.index_id')
+    index_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    index = db.relationship('Starmap', primaryjoin='starmap.c.id==persona.c.index_id')
 
     # Myelin offset stores the date at which the last Vesicle receieved from Myelin was created
-    myelin_offset = current_app.db.Column(current_app.db.DateTime)
+    myelin_offset = db.Column(db.DateTime)
 
     def __repr__(self):
         try:
@@ -417,6 +483,21 @@ class Persona(Identity):
         except AttributeError:
             name = ""
         return "<Persona @{} [{}]>".format(name, self.id[:6])
+
+    def activate(self):
+        if current_user.is_anonymous:
+            return UnauthorizedError("Need to be logged in to activate Personas")
+
+        if not self.associations[0].user == current_user:
+            raise UnauthorizedError("You can't activate foreign Personas")
+
+        for asc in PersonaAssociation.query.filter(PersonaAssociation.user==current_user, PersonaAssociation.active==True):
+            asc.active = False
+            db.session.add(asc)
+
+        self.associations[0].active = True
+        db.session.add(self.associations[0])
+        db.session.commit()
 
     def authorize(self, action, author_id=None):
         """Return True if this Persona authorizes `action` for `author_id`
@@ -661,14 +742,14 @@ class Persona(Identity):
         return following
 
 
-t_star_vesicles = current_app.db.Table(
+t_star_vesicles = db.Table(
     'star_vesicles',
-    current_app.db.Column('star_id', current_app.db.String(32), current_app.db.ForeignKey('star.id')),
-    current_app.db.Column('vesicle_id', current_app.db.String(32), current_app.db.ForeignKey('vesicle.id'))
+    db.Column('star_id', db.String(32), db.ForeignKey('star.id')),
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Star(Serializable, current_app.db.Model):
+class Star(Serializable, db.Model):
     """A Star represents a post"""
 
     __tablename__ = "star"
@@ -676,34 +757,34 @@ class Star(Serializable, current_app.db.Model):
     _insert_required = ["id", "text", "created", "modified", "author_id", "planet_assocs", "parent_id"]
     _update_required = ["id", "text", "modified"]
 
-    id = current_app.db.Column(current_app.db.String(32), primary_key=True)
-    text = current_app.db.Column(current_app.db.Text)
-    kind = current_app.db.Column(current_app.db.String(32))
+    id = db.Column(db.String(32), primary_key=True)
+    text = db.Column(db.Text)
+    kind = db.Column(db.String(32))
 
-    created = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
-    modified = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
 
-    state = current_app.db.Column(current_app.db.Integer, default=0)
+    state = db.Column(db.Integer, default=0)
 
-    author = current_app.db.relationship('Identity',
-        backref=current_app.db.backref('stars'),
+    author = db.relationship('Identity',
+        backref=db.backref('stars'),
         primaryjoin="identity.c.id==star.c.author_id")
-    author_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('identity.id'))
+    author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
 
-    planet_assocs = current_app.db.relationship("PlanetAssociation",
+    planet_assocs = db.relationship("PlanetAssociation",
         backref="star",
         lazy="dynamic")
 
-    vesicles = current_app.db.relationship('Vesicle',
+    vesicles = db.relationship('Vesicle',
         secondary='star_vesicles',
         primaryjoin='star_vesicles.c.star_id==star.c.id',
         secondaryjoin='star_vesicles.c.vesicle_id==vesicle.c.id')
 
-    parent = current_app.db.relationship('Star',
+    parent = db.relationship('Star',
         primaryjoin='and_(remote(Star.id)==Star.parent_id, Star.state>=0)',
-        backref=current_app.db.backref('children', lazy="dynamic"),
+        backref=db.backref('children', lazy="dynamic"),
         remote_side='Star.id')
-    parent_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('star.id'))
+    parent_id = db.Column(db.String(32), db.ForeignKey('star.id'))
 
     __mapper_args__ = {
         'polymorphic_identity': 'star',
@@ -972,8 +1053,8 @@ class Star(Serializable, current_app.db.Model):
             self.children.append(oneup)
 
         # Commit 1up
-        current_app.db.session.add(self)
-        current_app.db.session.commit()
+        db.session.add(self)
+        db.session.commit()
         logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
 
         return oneup
@@ -1019,15 +1100,15 @@ class Star(Serializable, current_app.db.Model):
         return self.planet_assocs.join(PlanetAssociation.planet.of_type(TextPlanet)).all()
 
 
-class PlanetAssociation(current_app.db.Model):
+class PlanetAssociation(db.Model):
     """Associates Planets with Stars, defining an author for the connection"""
 
     __tablename__ = 'planet_association'
-    star_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('star.id'), primary_key=True)
-    planet_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('planet.id'), primary_key=True)
-    planet = current_app.db.relationship("Planet", backref="star_assocs")
-    author_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('persona.id'))
-    author = current_app.db.relationship("Persona", backref="planet_assocs")
+    star_id = db.Column(db.String(32), db.ForeignKey('star.id'), primary_key=True)
+    planet_id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    planet = db.relationship("Planet", backref="star_assocs")
+    author_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
+    author = db.relationship("Persona", backref="planet_assocs")
 
     @classmethod
     def validate_changeset(cls, changeset):
@@ -1045,14 +1126,14 @@ class PlanetAssociation(current_app.db.Model):
         return p_cls.validate_changeset(changeset)
 
 
-t_planet_vesicles = current_app.db.Table(
+t_planet_vesicles = db.Table(
     'planet_vesicles',
-    current_app.db.Column('planet_id', current_app.db.String(32), current_app.db.ForeignKey('planet.id')),
-    current_app.db.Column('vesicle_id', current_app.db.String(32), current_app.db.ForeignKey('vesicle.id'))
+    db.Column('planet_id', db.String(32), db.ForeignKey('planet.id')),
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Planet(Serializable, current_app.db.Model):
+class Planet(Serializable, db.Model):
     """A Planet represents an attachment"""
 
     __tablename__ = 'planet'
@@ -1060,15 +1141,15 @@ class Planet(Serializable, current_app.db.Model):
     _insert_required = ["id", "title", "created", "modified", "source", "kind"]
     _update_required = ["id", "title", "modified", "source"]
 
-    id = current_app.db.Column(current_app.db.String(32), primary_key=True)
-    title = current_app.db.Column(current_app.db.Text)
-    kind = current_app.db.Column(current_app.db.String(32))
-    created = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
-    modified = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
-    source = current_app.db.Column(current_app.db.String(128))
-    state = current_app.db.Column(current_app.db.Integer, default=0)
+    id = db.Column(db.String(32), primary_key=True)
+    title = db.Column(db.Text)
+    kind = db.Column(db.String(32))
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    source = db.Column(db.String(128))
+    state = db.Column(db.Integer, default=0)
 
-    vesicles = current_app.db.relationship(
+    vesicles = db.relationship(
         'Vesicle',
         secondary='planet_vesicles',
         primaryjoin='planet_vesicles.c.planet_id==planet.c.id',
@@ -1162,8 +1243,8 @@ class PicturePlanet(Planet):
     _insert_required = ["id", "title", "created", "modified", "source", "filename", "kind"]
     _update_required = ["id", "title", "modified", "source", "filename"]
 
-    id = current_app.db.Column(current_app.db.String(32), ForeignKey('planet.id'), primary_key=True)
-    filename = current_app.db.Column(current_app.db.Text)
+    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    filename = db.Column(db.Text)
 
     __mapper_args__ = {
         'polymorphic_identity': 'picture'
@@ -1192,8 +1273,8 @@ class LinkedPicturePlanet(Planet):
     _insert_required = ["id", "title", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = current_app.db.Column(current_app.db.String(32), ForeignKey('planet.id'), primary_key=True)
-    url = current_app.db.Column(current_app.db.Text)
+    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    url = db.Column(db.Text)
 
     __mapper_args__ = {
         'polymorphic_identity': 'linkedpicture'
@@ -1223,8 +1304,8 @@ class LinkPlanet(Planet):
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = current_app.db.Column(current_app.db.String(32), ForeignKey('planet.id'), primary_key=True)
-    url = current_app.db.Column(current_app.db.Text)
+    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    url = db.Column(db.Text)
 
     __mapper_args__ = {
         'polymorphic_identity': 'link'
@@ -1254,8 +1335,8 @@ class TextPlanet(Planet):
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "text", "kind"]
     _update_required = ["id", "title", "modified", "source", "text"]
 
-    id = current_app.db.Column(current_app.db.String(32), ForeignKey('planet.id'), primary_key=True)
-    text = current_app.db.Column(current_app.db.Text)
+    id = db.Column(db.String(32), ForeignKey('planet.id'), primary_key=True)
+    text = db.Column(db.Text)
 
     __mapper_args__ = {
         'polymorphic_identity': 'text'
@@ -1395,23 +1476,23 @@ class Oneup(Star):
         logger.info("Updated {} from changeset".format(self))
 
 
-class Souma(Serializable, current_app.db.Model):
+class Souma(Serializable, db.Model):
     """A physical machine in the Souma network"""
 
     __tablename__ = "souma"
 
     _insert_required = ["id", "modified", "crypt_public", "sign_public", "starmap_id"]
-    id = current_app.db.Column(current_app.db.String(32), primary_key=True)
+    id = db.Column(db.String(32), primary_key=True)
 
-    crypt_private = current_app.db.Column(current_app.db.Text)
-    crypt_public = current_app.db.Column(current_app.db.Text)
-    sign_private = current_app.db.Column(current_app.db.Text)
-    sign_public = current_app.db.Column(current_app.db.Text)
+    crypt_private = db.Column(db.Text)
+    crypt_public = db.Column(db.Text)
+    sign_private = db.Column(db.Text)
+    sign_public = db.Column(db.Text)
 
-    starmap_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('starmap.id'))
-    starmap = current_app.db.relationship('Starmap')
+    starmap_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    starmap = db.relationship('Starmap')
 
-    _version_string = current_app.db.Column(current_app.db.String(32), default="")
+    _version_string = db.Column(db.String(32), default="")
 
     def __str__(self):
         return "<Souma [{}]>".format(self.id[:6])
@@ -1491,20 +1572,20 @@ class Souma(Serializable, current_app.db.Model):
         key_public = RsaPublicKey.Read(self.sign_public)
         return key_public.Verify(data, signature)
 
-t_starmap = current_app.db.Table(
+t_starmap = db.Table(
     'starmap_index',
-    current_app.db.Column('starmap_id', current_app.db.String(32), current_app.db.ForeignKey('starmap.id')),
-    current_app.db.Column('star_id', current_app.db.String(32), current_app.db.ForeignKey('star.id'))
+    db.Column('starmap_id', db.String(32), db.ForeignKey('starmap.id')),
+    db.Column('star_id', db.String(32), db.ForeignKey('star.id'))
 )
 
-t_starmap_vesicles = current_app.db.Table(
+t_starmap_vesicles = db.Table(
     'starmap_vesicles',
-    current_app.db.Column('starmap_id', current_app.db.String(32), current_app.db.ForeignKey('starmap.id')),
-    current_app.db.Column('vesicle_id', current_app.db.String(32), current_app.db.ForeignKey('vesicle.id'))
+    db.Column('starmap_id', db.String(32), db.ForeignKey('starmap.id')),
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Starmap(Serializable, current_app.db.Model):
+class Starmap(Serializable, db.Model):
     """
     Starmaps are collections of objects with associated layout information.
 
@@ -1521,20 +1602,20 @@ class Starmap(Serializable, current_app.db.Model):
     _insert_required = ["id", "modified", "author_id", "kind", "state"]
     _update_required = ["id", "modified", "index"]
 
-    id = current_app.db.Column(current_app.db.String(32), primary_key=True)
-    modified = current_app.db.Column(current_app.db.DateTime, default=datetime.datetime.utcnow())
-    kind = current_app.db.Column(current_app.db.String(16))
-    state = current_app.db.Column(current_app.db.Integer, default=0)
+    id = db.Column(db.String(32), primary_key=True)
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    kind = db.Column(db.String(16))
+    state = db.Column(db.Integer, default=0)
 
-    author_id = current_app.db.Column(
-        current_app.db.String(32),
-        current_app.db.ForeignKey('persona.id', use_alter=True, name="fk_author_id"))
-    author = current_app.db.relationship('Persona',
-        backref=current_app.db.backref('starmaps'),
+    author_id = db.Column(
+        db.String(32),
+        db.ForeignKey('persona.id', use_alter=True, name="fk_author_id"))
+    author = db.relationship('Persona',
+        backref=db.backref('starmaps'),
         primaryjoin="Persona.id==Starmap.author_id",
         post_update=True)
 
-    index = current_app.db.relationship(
+    index = db.relationship(
         'Star',
         secondary='starmap_index',
         backref="starmaps",
@@ -1542,7 +1623,7 @@ class Starmap(Serializable, current_app.db.Model):
         primaryjoin='starmap_index.c.starmap_id==starmap.c.id',
         secondaryjoin='starmap_index.c.star_id==star.c.id')
 
-    vesicles = current_app.db.relationship(
+    vesicles = db.relationship(
         'Vesicle',
         secondary='starmap_vesicles',
         primaryjoin='starmap_vesicles.c.starmap_id==starmap.c.id',
@@ -1552,7 +1633,7 @@ class Starmap(Serializable, current_app.db.Model):
         """Return True if the given key is contained in this Starmap.
 
         Args:
-            key: current_app.db.model.key to look for
+            key: db.model.key to look for
         """
         return (key in self.index)
 
@@ -1708,13 +1789,13 @@ class Starmap(Serializable, current_app.db.Model):
                             author=star_author
                         )
                         star.set_state(-1)
-                        current_app.db.session.add(star)
-                        current_app.db.session.commit()
+                        db.session.add(star)
+                        db.session.commit()
 
             new_starmap.index.append(star)
 
-        current_app.db.session.add(new_starmap)
-        current_app.db.session.commit()
+        db.session.add(new_starmap)
+        db.session.commit()
 
         for req in request_list:
             request_objects.send(Starmap.create_from_changeset, message=req)
@@ -1764,8 +1845,8 @@ class Starmap(Serializable, current_app.db.Model):
                             author=star_author
                         )
                         star.set_state(-1)
-                        current_app.db.session.add(star)
-                        current_app.db.session.commit()
+                        db.session.add(star)
+                        db.session.commit()
 
             self.index.append(star)
             added_stars.append(star)
@@ -1784,16 +1865,16 @@ class Starmap(Serializable, current_app.db.Model):
 # Table of group members
 #
 
-t_members = current_app.db.Table(
+t_members = db.Table(
     'members',
-    current_app.db.Column('group_id', current_app.db.String(32), current_app.db.ForeignKey('group.id')),
-    current_app.db.Column('persona_id', current_app.db.String(32), current_app.db.ForeignKey('persona.id'))
+    db.Column('group_id', db.String(32), db.ForeignKey('group.id')),
+    db.Column('persona_id', db.String(32), db.ForeignKey('persona.id'))
 )
 
-t_group_vesicles = current_app.db.Table(
+t_group_vesicles = db.Table(
     'group_vesicles',
-    current_app.db.Column('group_id', current_app.db.String(32), current_app.db.ForeignKey('group.id')),
-    current_app.db.Column('vesicle_id', current_app.db.String(32), current_app.db.ForeignKey('vesicle.id'))
+    db.Column('group_id', db.String(32), db.ForeignKey('group.id')),
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
@@ -1813,15 +1894,15 @@ class Group(Identity):
     _insert_required = Identity._insert_required + ["admin_id", "description", "profile_id"]
     _update_required = Identity._update_required + ["state"]
 
-    id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('identity.id'), primary_key=True)
-    description = current_app.db.Column(current_app.db.Text)
+    id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
+    description = db.Column(db.Text)
 
-    state = current_app.db.Column(current_app.db.Integer, default=0)
+    state = db.Column(db.Integer, default=0)
 
-    admin_id = current_app.db.Column(current_app.db.String(32), current_app.db.ForeignKey('persona.id'))
-    admin = current_app.db.relationship("Persona", primaryjoin="persona.c.id==group.c.admin_id")
+    admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
+    admin = db.relationship("Persona", primaryjoin="persona.c.id==group.c.admin_id")
 
-    members = current_app.db.relationship('Persona',
+    members = db.relationship('Persona',
         secondary='members',
         lazy="dynamic",
         backref="groups",
