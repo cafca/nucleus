@@ -10,7 +10,7 @@ from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from sqlalchemy import ForeignKey
 from uuid import uuid4
 
-from nucleus import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
+from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, CHANGE_TYPES
 from web_ui import app, db
 from web_ui.helpers import epoch_seconds

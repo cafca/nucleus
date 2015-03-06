@@ -1,6 +1,6 @@
 from sqlalchemy.exc import OperationalError
 
-from nucleus.models import *
+from .models import *
 
 
 def initialize_database(app, db):

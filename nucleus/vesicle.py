@@ -7,8 +7,8 @@ from base64 import b64encode, b64decode
 from hashlib import sha256
 from keyczar.keys import AesKey, HmacKey
 
-from nucleus import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, VesicleStateError
-from nucleus.models import Persona
+from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, VesicleStateError
+from .models import Persona
 from web_ui import app, db
 
 VESICLE_VERSION = "0.1"
