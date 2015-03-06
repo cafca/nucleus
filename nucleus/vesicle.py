@@ -1,7 +1,6 @@
 import json
 import datetime
 import iso8601
-import keyczar
 
 from base64 import b64encode, b64decode
 from hashlib import sha256
