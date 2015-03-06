@@ -77,7 +77,7 @@ class VesicleStateError(Exception):
 
 # Import at bottom to avoid circular imports
 # Import all models to allow querying db binds
-from nucleus.models import *
+from .models import *
 from vesicle import Vesicle
 
 # _Session is a custom sessionmaker that returns a session prefconfigured with the
