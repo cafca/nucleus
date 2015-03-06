@@ -4,7 +4,7 @@ import iso8601
 import semantic_version
 
 from base64 import b64encode, b64decode
-from flask import url_for, session, current_app
+from flask import url_for, session
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
@@ -163,6 +163,9 @@ class User(UserMixin, db.Model):
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
 
+    def __repr__(self):
+        return "<User {}>".format(self.email)
+
     def check_password(self, password):
         """Return True if password matches user password
 
@@ -234,6 +237,7 @@ class Identity(Serializable, db.Model):
     _stub = db.Column(db.Boolean, default=False)
     id = db.Column(db.String(32), primary_key=True)
     kind = db.Column(db.String(32))
+    created = db.Column(db.DateTime)
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     username = db.Column(db.String(80))
     crypt_private = db.Column(db.Text)

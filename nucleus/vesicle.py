@@ -6,16 +6,23 @@ from base64 import b64encode, b64decode
 from hashlib import sha256
 from keyczar.keys import AesKey, HmacKey
 from flask import current_app
+from sqlalchemy.orm import backref
 
 from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, \
     VesicleStateError, logger
 from .models import Persona
-from app import db
+from glia.database import db
 
 VESICLE_VERSION = "0.1"
 DEFAULT_ENCODING = "{version}-{encoding}".format(version=VESICLE_VERSION, encoding="plain")
 SYNAPSE_PORT = None
 AES_BYTES = 256
+
+
+keycrypt = db.Table('keycrypts',
+    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id')),
+    db.Column('recipient_id', db.String(32), db.ForeignKey('persona.id'))
+)
 
 
 class Vesicle(db.Model):
@@ -40,6 +47,12 @@ class Vesicle(db.Model):
 
     author_id = db.Column(db.String(32), db.ForeignKey('persona.id', use_alter=True, name="fk_author_id"))
     author = db.relationship('Persona', primaryjoin="Persona.id==Vesicle.author_id", post_update=True)
+
+    recipients = db.relationship('Persona',
+        secondary='keycrypts',
+        primaryjoin="keycrypts.c.vesicle_id==vesicle.c.id",
+        secondaryjoin="keycrypts.c.recipient_id==persona.c.id",
+        backref=backref('inbox', lazy='dynamic'))
 
     _hashcode = None
     data = None
