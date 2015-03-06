@@ -1,8 +1,6 @@
 import logging
 import blinker
 
-from app import db, app
-
 ERROR = {
     "MISSING_MESSAGE_TYPE": (1, "No message type found."),
     "MISSING_PAYLOAD": (2, "No data payload found."),

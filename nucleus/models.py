@@ -4,16 +4,17 @@ import iso8601
 import semantic_version
 
 from base64 import b64encode, b64decode
-from flask import url_for, session
+from flask import url_for, session, current_app
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from sqlalchemy import ForeignKey
 from uuid import uuid4
 
-from app import app, db
+from current_app import db
 
 from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
-    PersonaNotFoundError, UnauthorizedError, notification_signals, CHANGE_TYPES
+    PersonaNotFoundError, UnauthorizedError, notification_signals, \
+    CHANGE_TYPES, logger
 from .helpers import epoch_seconds
 
 request_objects = notification_signals.signal('request-objects')
@@ -314,14 +315,14 @@ class Identity(Serializable, db.Model):
 
         ident.profile = profile
 
-        app.logger.info("Created {} from changeset, now requesting {} linked objects".format(
+        logger.info("Created {} from changeset, now requesting {} linked objects".format(
             ident, len(request_list)))
 
         if request_sources:
             for req in request_list:
                 request_objects.send(Identity.create_from_changeset, message=req)
         else:
-            app.logger.info("Not requesting linked sources for new {}".format(kind))
+            logger.info("Not requesting linked sources for new {}".format(kind))
 
         return ident
 
@@ -336,7 +337,7 @@ class Identity(Serializable, db.Model):
         # Update username
         if "username" in changeset:
             self.username = changeset["username"]
-            app.logger.info("Updated {}'s {}".format(self.username, "username"))
+            logger.info("Updated {}'s {}".format(self.username, "username"))
 
         # Update profile
         if "profile_id" in changeset:
@@ -348,12 +349,12 @@ class Identity(Serializable, db.Model):
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
-                app.logger.info("Requested {}'s {}".format(self.username, "profile starmap"))
+                logger.info("Requested {}'s {}".format(self.username, "profile starmap"))
             else:
                 self.profile = profile
-                app.logger.info("Updated {}'s {}".format(self.username, "profile starmap"))
+                logger.info("Updated {}'s {}".format(self.username, "profile starmap"))
 
-        app.logger.info("Updated {} identity from changeset. Requesting {} objects.".format(self, len(request_list)))
+        logger.info("Updated {} identity from changeset. Requesting {} objects.".format(self, len(request_list)))
 
         for req in request_list:
             request_objects.send(Identity.create_from_changeset, message=req)
@@ -527,7 +528,7 @@ class Persona(Identity):
                     "recipient_id": update_sender.id,
                 })
 
-        app.logger.info("Made {} a Persona object, now requesting {} linked objects".format(
+        logger.info("Made {} a Persona object, now requesting {} linked objects".format(
             p, len(request_list)))
 
         for req in request_list:
@@ -540,7 +541,7 @@ class Persona(Identity):
         Identity.update_from_changeset(self, changeset,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        app.logger.info("Now applying Persona-specific updates for {}".format(self))
+        logger.info("Now applying Persona-specific updates for {}".format(self))
 
         request_list = list()
 
@@ -548,9 +549,9 @@ class Persona(Identity):
         if "email" in changeset:
             if isinstance(changeset["email"], str):
                 self.email = changeset["email"]
-                app.logger.info("Updated {}'s {}".format(self.username, "email"))
+                logger.info("Updated {}'s {}".format(self.username, "email"))
             else:
-                app.logger.warning("Invalid `email` supplied in update for {}\n\n".format(
+                logger.warning("Invalid `email` supplied in update for {}\n\n".format(
                     self, changeset))
 
         # Update index
@@ -563,10 +564,10 @@ class Persona(Identity):
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
-                app.logger.info("Requested {}'s new {}".format(self.username, "index starmap"))
+                logger.info("Requested {}'s new {}".format(self.username, "index starmap"))
             else:
                 self.index = index
-                app.logger.info("Updated {}'s {}".format(self.username, "index starmap"))
+                logger.info("Updated {}'s {}".format(self.username, "index starmap"))
 
         # Update contacts
         if "contacts" in changeset:
@@ -594,7 +595,7 @@ class Persona(Identity):
                     "recipient_id": update_sender.id,
                 })
 
-        app.logger.info("Updated {} from changeset. Requesting {} objects.".format(self, len(request_list)))
+        logger.info("Updated {} from changeset. Requesting {} objects.".format(self, len(request_list)))
 
         for req in request_list:
             request_objects.send(Persona.update_from_changeset, message=req)
@@ -637,7 +638,7 @@ class Persona(Identity):
         for contact in stale_contacts:
             self.contacts.remove(contact)
 
-        app.logger.info("Updated {}'s contacts: {} added, {} removed, {} requested".format(
+        logger.info("Updated {}'s contacts: {} added, {} removed, {} requested".format(
             self.username, updated_contacts, len(stale_contacts), len(request_list)))
 
         return request_list
@@ -769,7 +770,7 @@ class Star(Serializable, db.Model):
         # Append planets to new Star
         for planet_assoc in changeset["planet_assocs"]:
             if not PlanetAssociation.validate_changeset(planet_assoc):
-                app.logger.warning("Invalid changeset for planet associated with {}\n\n{}".format(star, changeset))
+                logger.warning("Invalid changeset for planet associated with {}\n\n{}".format(star, changeset))
             else:
                 author = Persona.request_persona(planet_assoc["author_id"])
                 pid = planet_assoc["planet"]["id"]
@@ -793,16 +794,16 @@ class Star(Serializable, db.Model):
 
                 assoc = PlanetAssociation(author=author, planet=planet)
                 star.planet_assocs.append(assoc)
-                app.logger.info("Added {} to new {}".format(planet, star))
+                logger.info("Added {} to new {}".format(planet, star))
 
-        app.logger.info("Created {} from changeset".format(star))
+        logger.info("Created {} from changeset".format(star))
 
         if changeset["parent_id"] != "None":
             parent = Star.query.get(changeset["parent_id"])
             if parent:
                 star.parent = parent
             else:
-                app.logger.info("Requesting {}'s parent star".format(star))
+                logger.info("Requesting {}'s parent star".format(star))
                 request_objects.send(Star.create_from_changeset, message={
                     "type": "Star",
                     "id": changeset["parent_id"],
@@ -823,7 +824,7 @@ class Star(Serializable, db.Model):
 
         for planet_assoc in changeset["planet_assocs"]:
             if not PlanetAssociation.validate_changeset(planet_assoc):
-                app.logger.warning("Invalid changeset for planet associated with {}\n{}".format(self, changeset))
+                logger.warning("Invalid changeset for planet associated with {}\n{}".format(self, changeset))
             else:
                 author = Persona.request_persona(planet_assoc["author_id"])
                 pid = planet_assoc["planet"]["id"]
@@ -838,9 +839,9 @@ class Star(Serializable, db.Model):
 
                     assoc = PlanetAssociation(author=author, planet=planet)
                     self.planet_assocs.append(assoc)
-                    app.logger.info("Added {} to {}".format(planet, self))
+                    logger.info("Added {} to {}".format(planet, self))
 
-        app.logger.info("Updated {} from changeset".format(self))
+        logger.info("Updated {} from changeset".format(self))
 
     def export(self, update=False):
         """See Serializable.export"""
@@ -975,7 +976,7 @@ class Star(Serializable, db.Model):
         # Commit 1up
         db.session.add(self)
         db.session.commit()
-        app.logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
+        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
 
         return oneup
 
@@ -1035,11 +1036,11 @@ class PlanetAssociation(db.Model):
         """Return True if `changeset` is a valid PlanetAssociation changeset"""
 
         if "author_id" not in changeset or changeset["author_id"] is None:
-            app.logger.warning("Missing `author_id` in changeset")
+            logger.warning("Missing `author_id` in changeset")
             return False
 
         if "planet" not in changeset or changeset["planet"] is None or "kind" not in changeset["planet"]:
-            app.logger.warning("Missing `planet` or `planet.kind` in changeset")
+            logger.warning("Missing `planet` or `planet.kind` in changeset")
             return False
 
         p_cls = LinkPlanet if changeset["planet"]["kind"] == "link" else LinkedPicturePlanet
@@ -1143,7 +1144,7 @@ class Planet(Serializable, db.Model):
                 source=changeset["source"]
             )
 
-        app.logger.info("Created new {} from changeset".format(new_planet))
+        logger.info("Created new {} from changeset".format(new_planet))
         return new_planet
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
@@ -1273,7 +1274,7 @@ class TextPlanet(Planet):
         planet = TextPlanet.query.get(h)
 
         if planet is None:
-            app.logger.info("Storing new text")
+            logger.info("Storing new text")
             planet = TextPlanet(
                 id=h,
                 text=text)
@@ -1379,7 +1380,7 @@ class Oneup(Star):
 
         star = Star.query.get(changeset["parent_id"])
         if star is None:
-            app.logger.warning("Parent Star for Oneup not found")
+            logger.warning("Parent Star for Oneup not found")
             oneup.parent_id = changeset["parent_id"]
         else:
             star.children.append(oneup)
@@ -1393,7 +1394,7 @@ class Oneup(Star):
 
         self.set_state(changeset["state"])
 
-        app.logger.info("Updated {} from changeset".format(self))
+        logger.info("Updated {} from changeset".format(self))
 
 
 class Souma(Serializable, db.Model):
@@ -1775,7 +1776,7 @@ class Starmap(Serializable, db.Model):
             s = Star.query.get(s_id)
             self.index.remove(s)
 
-        app.logger.info("Updated {}: {} stars added, {} requested, {} removed".format(
+        logger.info("Updated {}: {} stars added, {} requested, {} removed".format(
             self, len(added_stars), len(request_list), len(remove_stars)))
 
         for req in request_list:
@@ -1957,7 +1958,7 @@ class Group(Identity):
         for member in stale_members:
             self.members.remove(member)
 
-        app.logger.info("Updated {}'s members: {} added, {} removed, {} requested".format(
+        logger.info("Updated {}'s members: {} added, {} removed, {} requested".format(
             self.username, updated_members, len(stale_members), len(request_list)))
 
         return request_list
@@ -2018,7 +2019,7 @@ class Group(Identity):
         Identity.update_from_changeset(self, changeset,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        app.logger.info("Now applying Group-specific updates for {}".format(self))
+        logger.info("Now applying Group-specific updates for {}".format(self))
 
         request_list = list()
 
@@ -2026,7 +2027,7 @@ class Group(Identity):
 
         if "description" in changeset:
             self.description = changeset["description"]
-            app.logger.info("Updated {}'s description".format(self))
+            logger.info("Updated {}'s description".format(self))
 
         if "admin_id" in changeset:
             admin = Persona.query.get(changeset["admin_id"])
@@ -2056,7 +2057,7 @@ class Group(Identity):
                     "recipient_id": update_sender.id if update_sender else None,
                 })
 
-        app.logger.info("Updated {} from changeset. Requesting {} objects.".format(self, len(request_list)))
+        logger.info("Updated {} from changeset. Requesting {} objects.".format(self, len(request_list)))
 
         for req in request_list:
             request_objects.send(Group.update_from_changeset, message=req)

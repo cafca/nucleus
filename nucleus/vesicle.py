@@ -5,10 +5,12 @@ import iso8601
 from base64 import b64encode, b64decode
 from hashlib import sha256
 from keyczar.keys import AesKey, HmacKey
+from flask import current_app
 
-from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, VesicleStateError
+from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, \
+    VesicleStateError, logger
 from .models import Persona
-from app import app, db
+from app import db
 
 VESICLE_VERSION = "0.1"
 DEFAULT_ENCODING = "{version}-{encoding}".format(version=VESICLE_VERSION, encoding="plain")
@@ -330,7 +332,7 @@ class Vesicle(db.Model):
         keycrypt = json.loads(self.keycrypt)
         del keycrypt[recipient.id]
         self.keycrypt = json.dumps(keycrypt)
-        app.logger.info("Removed {} as a recipient of {}".format(recipient, self))
+        logger.info("Removed {} as a recipient of {}".format(recipient, self))
 
     def json(self, indent=False,):
         """
@@ -352,7 +354,7 @@ class Vesicle(db.Model):
         for attr in self.get_send_attributes():
             message[attr] = getattr(self, attr)
         message["created"] = datetime.datetime.utcnow().isoformat()
-        message["souma_id"] = app.config["SOUMA_ID"]
+        message["souma_id"] = current_app.config["SOUMA_ID"]
         r = json.dumps(message, indent=indent)
 
         if plainenc:
