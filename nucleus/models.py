@@ -4,7 +4,7 @@ import iso8601
 import semantic_version
 
 from base64 import b64encode, b64decode
-from flask import url_for, session
+from flask import url_for, session, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
@@ -47,7 +47,7 @@ class Serializable():
             return False
         return True
 
-    def export(self, exclude=[], update=False):
+    def export(self, exclude=[], include=None, update=False):
         """Return this object as a dict.
 
         Args:
@@ -60,7 +60,11 @@ class Serializable():
             KeyError: If a key was not found
         """
         attr_names = self._update_required if update is True else self._insert_required
-        attr_names = [a for a in attr_names if a not in exclude]
+
+        if include:
+            attr_names = include
+        else:
+            attr_names = [a for a in attr_names if a not in exclude]
 
         return {attr: str(getattr(self, attr)) for attr in attr_names}
 
@@ -459,6 +463,7 @@ class Persona(Identity):
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
     email = db.Column(db.String(120))
+    auth = db.Column(db.String(32), default=uuid4().hex)
     session_id = db.Column(db.String(32), default=uuid4().hex)
     last_connected = db.Column(db.DateTime, default=datetime.datetime.now())
 
@@ -523,9 +528,9 @@ class Persona(Identity):
     def get_absolute_url(self):
         return url_for('persona', id=self.id)
 
-    def export(self, update=False):
-        exclude = ["contacts", "groups", "groups_followed"]
-        data = Identity.export(self, exclude=exclude, update=update)
+    def export(self, exclude=[], include=None, update=False):
+        exclude = set(exclude + ["contacts", "groups", "groups_followed"])
+        data = Identity.export(self, exclude=exclude, include=include, update=update)
 
         data["contacts"] = list()
         for contact in self.contacts:
@@ -546,6 +551,15 @@ class Persona(Identity):
             })
 
         return data
+
+    def reset(self):
+        """Reset session_id"""
+        self.session_id = uuid4().hex
+        self.auth = uuid4().hex
+        return self.session_id
+
+    def timeout(self):
+        return self.last_connected + current_app.config['SESSION_EXPIRATION_TIME']
 
     @staticmethod
     def request_persona(persona_id):
@@ -925,10 +939,11 @@ class Star(Serializable, db.Model):
 
         logger.info("Updated {} from changeset".format(self))
 
-    def export(self, update=False):
+    def export(self, exclude=[], include=None, update=False):
         """See Serializable.export"""
 
-        data = Serializable.export(self, exclude=["planets", ], update=update)
+        ex = set(exclude + ["planets", ])
+        data = Serializable.export(self, exclude=ex, include=include, update=update)
 
         data["planet_assocs"] = list()
         for planet_assoc in self.planet_assocs:
@@ -1197,9 +1212,6 @@ class Planet(Serializable, db.Model):
                 new_state, type(new_state))
         else:
             self.state = new_state
-
-    def export(self, update=False):
-        return Serializable.export(self, update=update)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1512,6 +1524,30 @@ class Souma(Serializable, db.Model):
         """
         return False
 
+    def authentic_request(self, request):
+        """Validate whether a request carries a valid authentication
+        Args:
+            request: A Flask request context
+        Raises:
+            ValueError: If authentication fails
+        """
+        pass
+        # if request.headers.get("X-Forwarded-Proto") == "https":
+        #     url = str(request.url).replace("http://", "https://")
+        # else:
+        #     url = str(request.url)
+
+        # glia_rand = b64decode(request.headers["Glia-Rand"])
+        # glia_auth = request.headers["Glia-Auth"]
+        # req = "".join([str(self.id), glia_rand, url, request.data])
+        # if not self.verify(req, glia_auth):
+        #     raise ValueError("""Request failed authentication: {}
+        #         ID: {}
+        #         Rand: {}
+        #         Path: {}
+        #         Payload: {} ({} bytes)
+        #         Authentication: {} ({} bytes)""".format(request, str(self.id), b64encode(glia_rand), url, request.data[:400], len(request.data), glia_auth[:8], len(glia_auth)))
+
     def generate_keys(self):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
 
@@ -1724,8 +1760,9 @@ class Starmap(Serializable, db.Model):
             p = Persona.query.filter(Persona.index_id == self.id).first()
             return url_for("persona", id=p.id)
 
-    def export(self, update=False):
-        data = Serializable.export(self, exclude=["index", ], update=update)
+    def export(self, exclude=[], include=None, update=False):
+        ex = set(exclude + ["index", ])
+        data = Serializable.export(self, exclude=ex, include=include, update=update)
 
         data["index"] = list()
         for star in self.index.filter('Star.state >= 0'):
@@ -1943,11 +1980,11 @@ class Group(Identity):
             return self.admin_id == author_id
         return False
 
-    def export(self, exclude=None, update=False):
+    def export(self, exclude=[], include=None, update=False):
         if not exclude:
             exclude = list()
 
-        data = Identity.export(self, exclude=exclude + ["members"], update=update)
+        data = Identity.export(self, exclude=set(exclude + ["members"]), include=include, update=update)
 
         if "members" not in exclude:
             data["members"] = list()
