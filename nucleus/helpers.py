@@ -1,7 +1,13 @@
 import logging
 import os
 
+from datetime import datetime
+
 from Crypto.Hash import SHA256
+
+# For calculating scores
+epoch = datetime.utcfromtimestamp(0)
+epoch_seconds = lambda dt: (dt - epoch).total_seconds() - 1356048000
 
 
 def configure_app(app, args):

@@ -10,10 +10,11 @@ from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from sqlalchemy import ForeignKey
 from uuid import uuid4
 
+from app import app, db
+
 from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, CHANGE_TYPES
-from web_ui import app, db
-from web_ui.helpers import epoch_seconds
+from .helpers import epoch_seconds
 
 request_objects = notification_signals.signal('request-objects')
 

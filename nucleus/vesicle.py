@@ -9,7 +9,7 @@ from keyczar.keys import AesKey, HmacKey
 
 from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, VesicleStateError
 from .models import Persona
-from web_ui import app, db
+from app import app, db
 
 VESICLE_VERSION = "0.1"
 DEFAULT_ENCODING = "{version}-{encoding}".format(version=VESICLE_VERSION, encoding="plain")

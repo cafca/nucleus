@@ -3,7 +3,7 @@ import sys
 from esky import Esky
 from gevent import spawn_later
 
-from web_ui import app
+from app import app
 
 
 def update_souma():
