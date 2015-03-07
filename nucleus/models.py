@@ -1949,6 +1949,17 @@ class Group(Identity):
         primaryjoin='members.c.group_id==group.c.id',
         secondaryjoin='members.c.persona_id==persona.c.id')
 
+    def __init__(self, *args, **kwargs):
+        """Attach index starmap to new groups"""
+        Identity.__init__(self, *args, **kwargs)
+        index = Starmap(
+            id=uuid4().hex,
+            author=self.admin,
+            kind="group_profile",
+            modified=self.created)
+
+        self.profile = index
+
     def __repr__(self):
         try:
             name = self.username.encode('utf-8')
