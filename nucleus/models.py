@@ -161,7 +161,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(128))
     created = db.Column(db.DateTime)
     modified = db.Column(db.DateTime)
-    pw_hash = db.Column(db.String(32))
+    pw_hash = db.Column(db.String(64))
     active = db.Column(db.Boolean, default=True)
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
