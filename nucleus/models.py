@@ -4,7 +4,7 @@ import iso8601
 import semantic_version
 
 from base64 import b64encode, b64decode
-from flask import url_for, session, current_app
+from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
@@ -1009,7 +1009,7 @@ class Star(Serializable, db.Model):
         Return True if active Persona has 1upped this Star
         """
 
-        oneup = self.oneups.filter_by(author_id=session["active_persona"]).first()
+        oneup = self.oneups.filter_by(author_id=current_user.active_persona).first()
 
         if oneup is None or oneup.state < 0:
             return False
@@ -1050,7 +1050,7 @@ class Star(Serializable, db.Model):
         """
 
         if author_id is None:
-            author = Persona.query.get(session["active_persona"])
+            author = Persona.query.get(current_user.active_persona)
         else:
             author = Persona.query.get(author_id)
 
