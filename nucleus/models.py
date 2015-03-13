@@ -500,8 +500,9 @@ class Persona(Identity):
             raise UnauthorizedError("You can't activate foreign Personas")
 
         for asc in PersonaAssociation.query.filter(PersonaAssociation.user==current_user, PersonaAssociation.active==True):
-            asc.active = False
-            db.session.add(asc)
+            if asc.active and not (asc == self.associations[0]):
+                asc.active = False
+                db.session.add(asc)
 
         self.associations[0].active = True
         db.session.add(self.associations[0])
@@ -1009,7 +1010,7 @@ class Star(Serializable, db.Model):
         Return True if active Persona has 1upped this Star
         """
 
-        oneup = self.oneups.filter_by(author_id=current_user.active_persona).first()
+        oneup = self.oneups.filter_by(author=current_user.active_persona).first()
 
         if oneup is None or oneup.state < 0:
             return False
@@ -1050,7 +1051,7 @@ class Star(Serializable, db.Model):
         """
 
         if author_id is None:
-            author = Persona.query.get(current_user.active_persona)
+            author = current_user.active_persona
         else:
             author = Persona.query.get(author_id)
 
