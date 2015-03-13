@@ -162,9 +162,10 @@ class User(UserMixin, db.Model):
     created = db.Column(db.DateTime)
     modified = db.Column(db.DateTime)
     pw_hash = db.Column(db.String(64))
-    active = db.Column(db.Boolean, default=True)
+    active = db.Column(db.Boolean, default=False)
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
+    signup_code = db.Column(db.String(128))
 
     def __repr__(self):
         return "<User {}>".format(self.email)
@@ -198,6 +199,21 @@ class User(UserMixin, db.Model):
 
     def is_anonymous(self):
         return False
+
+    def valid_signup_code(self, signup_code):
+        """Return True if the given signup code is valid, and less than 7 days
+        have passed since signup.
+
+        Args:
+            signup_code (String): 128byte string passed in registration email
+        """
+        if signup_code != self.signup_code:
+            return False
+
+        if (datetime.datetime.utcnow() - self.created) > datetime.timedelta(days=7):
+            return False
+
+        return True
 
     @property
     def active_persona(self):
