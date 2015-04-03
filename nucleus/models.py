@@ -1343,6 +1343,27 @@ class LinkPlanet(Planet):
         'polymorphic_identity': 'link'
     }
 
+    @classmethod
+    def get_or_create(cls, url):
+        """Get or create an instance from a URL
+
+        Args:
+            url (String): URL of the Planet to retrieve
+
+        Raises:
+            ValueError: If no url was provided"""
+
+        if url is not None:
+            url_hash = sha256(url).hexdigest()[:32]
+        else:
+            raise ValueError("URL parameter must not be None")
+
+        inst = cls.query.filter_by(id=url_hash).first()
+        if inst is None:
+            inst = cls(id=url_hash, url=url)
+
+        return inst
+
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
         """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
