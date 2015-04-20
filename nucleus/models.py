@@ -1377,6 +1377,24 @@ class LinkPlanet(Planet):
 
         return new_planet
 
+    def favicon_url(self):
+        """Return the URL of this Planet's domain favicon
+
+        Returns:
+            string: URL of the favicon as a 32 pixel image"""
+
+        # Taken from http://stackoverflow.com/questions/9626535/get-domain-name-from-url/9626596#9626596
+
+        from urlparse import urlparse
+
+        parsed_uri = urlparse(self.url)
+        try:
+            domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+        except AttributeError, e:
+            logger.warning("Error retrieving domain for {}: {}".format(self, e))
+        else:
+            return "http://grabicon.com/icon?domain={}".format(domain)
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
