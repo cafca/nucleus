@@ -162,7 +162,7 @@ class User(UserMixin, db.Model):
     created = db.Column(db.DateTime)
     modified = db.Column(db.DateTime)
     pw_hash = db.Column(db.String(64))
-    active = db.Column(db.Boolean, default=False)
+    active = db.Column(db.Boolean(), default=False)
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
     signup_code = db.Column(db.String(128))
@@ -799,6 +799,9 @@ class Star(Serializable, db.Model):
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
 
     state = db.Column(db.Integer, default=0)
+
+    # Set this to True if this Star is not to be included in dynamic listings
+    hidden = db.Column(db.Boolean(), default=False)
 
     author = db.relationship('Identity',
         backref=db.backref('stars'),
