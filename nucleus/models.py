@@ -800,9 +800,6 @@ class Star(Serializable, db.Model):
 
     state = db.Column(db.Integer, default=0)
 
-    # Set this to True if this Star is not to be included in dynamic listings
-    hidden = db.Column(db.Boolean(), default=False)
-
     author = db.relationship('Identity',
         backref=db.backref('stars'),
         primaryjoin="identity.c.id==star.c.author_id")
