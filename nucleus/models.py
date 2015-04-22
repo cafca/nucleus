@@ -1422,7 +1422,7 @@ class TextPlanet(Planet):
         Args:
             text: Content value of the TextPlanet
         """
-        h = sha256(text).hexdigest()[:32]
+        h = sha256(text.encode('utf-8')).hexdigest()[:32]
         planet = TextPlanet.query.get(h)
 
         if planet is None:
