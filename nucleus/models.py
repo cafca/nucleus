@@ -1344,11 +1344,13 @@ class LinkPlanet(Planet):
     }
 
     @classmethod
-    def get_or_create(cls, url):
+    def get_or_create(cls, url, title=None):
         """Get or create an instance from a URL
 
         Args:
             url (String): URL of the Planet to retrieve
+            title (String): Optional title. Is only set when no existing
+                instance is found
 
         Raises:
             ValueError: If no url was provided"""
@@ -1360,7 +1362,7 @@ class LinkPlanet(Planet):
 
         inst = cls.query.filter_by(id=url_hash).first()
         if inst is None:
-            inst = cls(id=url_hash, url=url)
+            inst = cls(id=url_hash, url=url, title=title)
 
         return inst
 
