@@ -1450,6 +1450,15 @@ class TextPlanet(Planet):
         """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
+    def reading_time(self):
+        """Return an estimate for reading time based on 200 words per minute
+
+        Returns:
+            Reading time as a timedelta object
+        """
+        word_count = len(self.text.split(" "))
+        return datetime.timedelta(seconds=int(word_count / 200))
+
 
 class Oneup(Star):
     """A 1up is a vote that signals interest in its parent Star"""
