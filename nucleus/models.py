@@ -1457,7 +1457,7 @@ class TextPlanet(Planet):
             Reading time as a timedelta object
         """
         word_count = len(self.text.split(" "))
-        return datetime.timedelta(seconds=int(word_count / 200))
+        return datetime.timedelta(minutes=int(word_count / 200))
 
 
 class Oneup(Star):
