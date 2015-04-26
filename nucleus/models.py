@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger
+    CHANGE_TYPES, logger, planet_sort_rank
 from .helpers import epoch_seconds
 
 from glia.database import db
@@ -1160,6 +1160,15 @@ class PlanetAssociation(db.Model):
         p_cls = LinkPlanet if changeset["planet"]["kind"] == "link" else LinkedPicturePlanet
         return p_cls.validate_changeset(changeset)
 
+    @property
+    def sort_rank(self):
+        """Return sort rank of this planet type
+
+        Returns:
+            Depending on self.__class__ an Integer > 0 is returned
+        """
+        return planet_sort_rank.get(self.__class__, default=1000)
+
 
 t_planet_vesicles = db.Table(
     'planet_vesicles',
@@ -1307,6 +1316,8 @@ class LinkedPicturePlanet(Planet):
 
     id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     url = db.Column(db.Text)
+    width = db.Column(db.Integer, default=0)
+    height = db.Column(db.Integer, default=0)
 
     __mapper_args__ = {
         'polymorphic_identity': 'linkedpicture'
@@ -1323,16 +1334,21 @@ class LinkedPicturePlanet(Planet):
 
         new_planet.url = changeset["url"]
 
+        if "width" in changeset:
+            new_planet.width = int(changeset["width"])
+
+        if "height" in changeset:
+            new_planet.height = int(changeset["height"])
+
         return new_planet
 
     @classmethod
-    def get_or_create(cls, url, title=None):
+    def get_or_create(cls, url, *args, **kwargs):
         """Get or create an instance from a URL
 
         Args:
             url (String): URL of the Planet to retrieve
-            title (String): Optional title. Is only set when no existing
-                instance is found
+            args, kwargs: get passed on to cls.__init__ if a new instance is created
 
         Raises:
             ValueError: If no url was provided"""
@@ -1344,7 +1360,7 @@ class LinkedPicturePlanet(Planet):
 
         inst = cls.query.filter_by(id=url_hash).first()
         if inst is None:
-            inst = cls(id=url_hash, url=url, title=title)
+            inst = cls(id=url_hash, url=url, *args, **kwargs)
 
         return inst
 

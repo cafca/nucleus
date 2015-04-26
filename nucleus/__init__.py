@@ -25,6 +25,13 @@ logger = logging.getLogger('nucleus')
 source_format = lambda address: None if address is None else \
     "{host}:{port}".format(host=address[0], port=address[1])
 
+planet_sort_rank = {
+    "PicturePlanet": 100,
+    "LinkedPicturePlanet": 200,
+    "TextPlanet": 400,
+    "LinkPlanet": 300
+}
+
 # Possible states of stars
 STAR_STATES = {
     -2: (-2, "deleted"),
