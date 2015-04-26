@@ -1325,6 +1325,29 @@ class LinkedPicturePlanet(Planet):
 
         return new_planet
 
+    @classmethod
+    def get_or_create(cls, url, title=None):
+        """Get or create an instance from a URL
+
+        Args:
+            url (String): URL of the Planet to retrieve
+            title (String): Optional title. Is only set when no existing
+                instance is found
+
+        Raises:
+            ValueError: If no url was provided"""
+
+        if url is not None:
+            url_hash = sha256("linkedpicture" + url).hexdigest()[:32]
+        else:
+            raise ValueError("URL parameter must not be None")
+
+        inst = cls.query.filter_by(id=url_hash).first()
+        if inst is None:
+            inst = cls(id=url_hash, url=url, title=title)
+
+        return inst
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
