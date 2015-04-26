@@ -1316,8 +1316,8 @@ class LinkedPicturePlanet(Planet):
 
     id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
     url = db.Column(db.Text)
-    width = db.Column(db.Integer, default=0)
-    height = db.Column(db.Integer, default=0)
+    # width = db.Column(db.Integer, default=0)
+    # height = db.Column(db.Integer, default=0)
 
     __mapper_args__ = {
         'polymorphic_identity': 'linkedpicture'
@@ -1334,11 +1334,11 @@ class LinkedPicturePlanet(Planet):
 
         new_planet.url = changeset["url"]
 
-        if "width" in changeset:
-            new_planet.width = int(changeset["width"])
+        # if "width" in changeset:
+        #     new_planet.width = int(changeset["width"])
 
-        if "height" in changeset:
-            new_planet.height = int(changeset["height"])
+        # if "height" in changeset:
+        #     new_planet.height = int(changeset["height"])
 
         return new_planet
 
