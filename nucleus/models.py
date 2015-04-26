@@ -1167,7 +1167,7 @@ class PlanetAssociation(db.Model):
         Returns:
             Depending on self.__class__ an Integer > 0 is returned
         """
-        return planet_sort_rank.get(self.__class__, 1000)
+        return planet_sort_rank.get(self.planet.kind, 1000)
 
 
 t_planet_vesicles = db.Table(
