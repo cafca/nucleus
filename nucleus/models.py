@@ -305,12 +305,11 @@ class Identity(Serializable, db.Model):
             all neccessary keys are available
         """
         if self.crypt_private is not None and self.sign_private is not None:
-            if self.id == session["active_persona"]:
+            if self.id == session.get("active_persona"):
                 return True
-            if Persona.query.get(session["active_persona"]).user == self.user:
+            if Persona.query.get(session.get("active_persona")).user == self.user:
                 return True
-        else:
-            return False
+        return False
 
     @staticmethod
     def list_controlled():
