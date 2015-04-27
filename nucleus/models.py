@@ -314,7 +314,7 @@ class Identity(Serializable, db.Model):
 
     @staticmethod
     def list_controlled():
-        if "active_persona" in session:
+        if session.get("active_persona"):
             controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
 
             return [asc.persona for asc in controlled_user.associations]
