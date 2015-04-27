@@ -307,8 +307,7 @@ class Identity(Serializable, db.Model):
         if self.crypt_private is not None and self.sign_private is not None:
             if self.id == session.get("active_persona"):
                 return True
-            active_persona = Persona.query.get(session.get("active_persona"))
-            if active_persona and active_persona.user == self.user:
+            if session.get("active_persona") and Persona.query.get(session.get("active_persona")).user == self.user:
                 return True
         return False
 
