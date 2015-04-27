@@ -314,9 +314,12 @@ class Identity(Serializable, db.Model):
 
     @staticmethod
     def list_controlled():
-        controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
+        if "active_persona" in session:
+            controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
 
-        return [asc.persona for asc in controlled_user.associations]
+            return [asc.persona for asc in controlled_user.associations]
+        else:
+            return []
 
     def generate_keys(self, password):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
