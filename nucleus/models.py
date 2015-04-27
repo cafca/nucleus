@@ -4,7 +4,7 @@ import iso8601
 import semantic_version
 
 from base64 import b64encode, b64decode
-from flask import url_for, current_app
+from flask import url_for, current_app, session
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
@@ -301,16 +301,22 @@ class Identity(Serializable, db.Model):
 
     def controlled(self):
         """
-        Return True if this Identity has private keys attached
+        Return True if currently active User controls this Persona and
+            all neccessary keys are available
         """
         if self.crypt_private is not None and self.sign_private is not None:
-            return True
+            if self.id == session["active_persona"]:
+                return True
+            if Persona.query.get(session["active_persona"]).user == self.user:
+                return True
         else:
             return False
 
     @staticmethod
     def list_controlled():
-        return Identity.query.filter('Identity.sign_private != ""')
+        controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
+
+        return [asc.persona for asc in controlled_user.associations]
 
     def generate_keys(self, password):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
@@ -755,6 +761,10 @@ class Persona(Identity):
             self.username, updated_contacts, len(stale_contacts), len(request_list)))
 
         return request_list
+
+    @property
+    def user(self):
+        return self.associations[0].user
 
     def toggle_following_group(self, group):
         """Toggle whether this Persona is following a group.
