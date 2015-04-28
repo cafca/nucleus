@@ -168,7 +168,7 @@ class User(UserMixin, db.Model):
     signup_code = db.Column(db.String(128))
 
     def __repr__(self):
-        return u"<User {}>".format(self.email)
+        return "<User {}>".format(self.email.decode('utf-8'))
 
     def check_password(self, password):
         """Return True if password matches user password
@@ -283,7 +283,7 @@ class Identity(Serializable, db.Model):
             name = self.username.encode('utf-8')
         except AttributeError:
             name = ""
-        return u"<ID @{} [{}]>".format(name, self.id[:6])
+        return "<ID @{} [{}]>".format(name, self.id[:6])
 
     def authorize(self, action, author_id=None):
         """Return True if this Identity authorizes `action` for `author_id`
@@ -514,7 +514,7 @@ class Persona(Identity):
             name = self.username.encode('utf-8')
         except AttributeError:
             name = ""
-        return u"<Persona @{} [{}]>".format(name, self.id[:6])
+        return "<Persona @{} [{}]>".format(name, self.id[:6])
 
     def activate(self):
         if current_user.is_anonymous:
@@ -838,9 +838,10 @@ class Star(Serializable, db.Model):
     }
 
     def __repr__(self):
-        return u"<Star {}: {}>".format(
+        text = self.text.encode('utf-8')
+        return "<Star {}: {}>".format(
             self.id[:6],
-            (self.text[:24] if len(self.text) <= 24 else self.text[:22] + u".."))
+            (text[:24] if len(text) <= 24 else text[:22] + ".."))
 
     def authorize(self, action, author_id=None):
         """Return True if this Star authorizes `action` for `author_id`
@@ -1215,7 +1216,7 @@ class Planet(Serializable, db.Model):
     }
 
     def __repr__(self):
-        return u"<Planet:{} [{}]>".format(self.kind, self.id[:6])
+        return "<Planet:{} [{}]>".format(self.kind, self.id[:6])
 
     def get_state(self):
         """
@@ -1521,10 +1522,10 @@ class Oneup(Star):
 
     def __repr__(self):
         if ["author_id", "parent_id"] in dir(self):
-            return u"<1up <Persona {}> -> <Star {}> ({})>".format(
+            return "<1up <Persona {}> -> <Star {}> ({})>".format(
                 self.author_id[:6], self.parent_id[:6], self.get_state())
         else:
-            return u"<1up ({})>".format(self.get_state())
+            return "<1up ({})>".format(self.get_state())
 
     def get_state(self):
         """
@@ -1800,7 +1801,7 @@ class Starmap(Serializable, db.Model):
         else:
             name = "Starmap"
 
-        return u"<{} (by {}) [{}]>".format(name, self.author, self.id[:6])
+        return "<{} (by {}) [{}]>".format(name, self.author, self.id[:6])
 
     def __len__(self):
         return self.index.paginate(1).total
@@ -2075,14 +2076,14 @@ class Group(Identity):
             modified=self.created)
 
         self.profile = index
-
+s
     def __repr__(self):
         try:
             name = self.username.encode('utf-8')
         except AttributeError:
             name = "(name encode error)"
 
-        return u"<Group @{} [{}]>".format(name, self.id[:6])
+        return "<Group @{} [{}]>".format(name, self.id[:6])
 
     def add_member(self, persona):
         """Add a Persona as member to this group
