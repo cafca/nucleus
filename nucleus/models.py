@@ -840,7 +840,7 @@ class Star(Serializable, db.Model):
     def __repr__(self):
         return u"<Star {}: {}>".format(
             self.id[:6],
-            (self.text[:24] if len(self.text) <= 24 else self.text[:22] + ".."))
+            (self.text[:24] if len(self.text) <= 24 else self.text[:22] + u".."))
 
     def authorize(self, action, author_id=None):
         """Return True if this Star authorizes `action` for `author_id`
@@ -1041,6 +1041,7 @@ class Star(Serializable, db.Model):
         else:
             return True
 
+    @cache.memoize(timeout=10)
     def oneup_count(self):
         """
         Return the number of verified upvotes this Star has receieved
@@ -1098,6 +1099,7 @@ class Star(Serializable, db.Model):
         # Commit 1up
         db.session.add(self)
         db.session.commit()
+        cache.delete_memoized(self.oneup_count)
         logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
 
         return oneup
