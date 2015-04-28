@@ -15,7 +15,7 @@ from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, \
     CHANGE_TYPES, logger, planet_sort_rank
 from .helpers import epoch_seconds
 
-from glia.database import db
+from database import cache, db
 
 request_objects = notification_signals.signal('request-objects')
 

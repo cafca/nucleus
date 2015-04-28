@@ -11,7 +11,7 @@ from sqlalchemy.orm import backref
 from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, \
     VesicleStateError, logger
 from .models import Persona
-from glia.database import db
+from database import db
 
 VESICLE_VERSION = "0.1"
 DEFAULT_ENCODING = "{version}-{encoding}".format(version=VESICLE_VERSION, encoding="plain")
