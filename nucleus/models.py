@@ -2076,7 +2076,7 @@ class Group(Identity):
             modified=self.created)
 
         self.profile = index
-s
+
     def __repr__(self):
         try:
             name = self.username.encode('utf-8')
