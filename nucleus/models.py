@@ -2018,9 +2018,21 @@ class Starmap(Serializable, db.Model):
         for req in request_list:
             request_objects.send(Starmap.create_from_changeset, message=req)
 
-#
-# Table of group members
-#
+
+class GroupMemberAssociation(db.Model):
+    """Associates Personas with Groups"""
+
+    __tablename__ = 'groupmember_association'
+    group_id = db.Column(db.String(32), db.ForeignKey('group.id'), primary_key=True)
+    persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
+    persona = db.relationship("Persona", backref="group_assocs")
+
+    role = db.Column(db.String(16), default="follower")
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    description = db.Column(db.Text)
+    active = db.Column(db.Boolean, default=True)
+    last_seen = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+
 
 t_members = db.Table(
     'members',
@@ -2059,12 +2071,9 @@ class Group(Identity):
     admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
     admin = db.relationship("Persona", primaryjoin="persona.c.id==group.c.admin_id")
 
-    members = db.relationship('Persona',
-        secondary='members',
-        lazy="dynamic",
-        backref="groups",
-        primaryjoin='members.c.group_id==group.c.id',
-        secondaryjoin='members.c.persona_id==persona.c.id')
+    planet_assocs = db.relationship("GroupMemberAssociation",
+        backref="group",
+        lazy="dynamic")
 
     def __init__(self, *args, **kwargs):
         """Attach index starmap to new groups"""
