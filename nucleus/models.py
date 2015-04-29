@@ -313,7 +313,7 @@ class Identity(Serializable, db.Model):
 
     @staticmethod
     def list_controlled():
-        if session.get("active_persona"):
+        if session.get("active_persona") and controlled_user is not None:
             controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
 
             return [asc.persona for asc in controlled_user.associations]
