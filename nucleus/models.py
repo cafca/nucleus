@@ -1,3 +1,4 @@
+
 import datetime
 import json
 import iso8601
@@ -786,6 +787,38 @@ class Persona(Identity):
             following = True
 
         return following
+
+    def toggle_group_membership(self, group):
+        """Toggle whether this Persona is member of a group.
+
+        Also enables group following for this Persona/Group.
+
+        Args:
+            group (Group): Group entity to be become member of
+
+        Returns:
+            Updated GroupMemberAssociation object or None if it was deleted
+        """
+        if group not in self.groups_followed:
+            logger.info("Setting {} to follow {}.".format(self, group))
+            self.toggle_following_group(group)
+
+        gms = GroupMemberAssociation.query.filter_by(group_id=group.id). \
+            filter_by(persona_id=self.id).first()
+
+        if gms is None:
+            logger.info("Enabling membership of {} in {}".format(self, group))
+            gms = GroupMemberAssociation(
+                persona=self,
+                group_id=group.id,
+                role="member",
+            )
+            rv = gms
+        else:
+            logger.info("Removing membership of {} in {}".format(self, group))
+            gms.query.delete()
+            rv = None
+        return rv
 
 
 t_star_vesicles = db.Table(
@@ -2027,6 +2060,7 @@ class GroupMemberAssociation(db.Model):
     persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
     persona = db.relationship("Persona", backref="group_assocs")
 
+    # Role may be either 'admin' or 'member'
     role = db.Column(db.String(16), default="follower")
     created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     description = db.Column(db.Text)
