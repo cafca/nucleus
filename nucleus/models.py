@@ -782,9 +782,11 @@ class Persona(Identity):
 
         try:
             self.groups_followed.remove(group)
+            logger.info("{} is not following {} anymore".format(self, group))
         except ValueError:
             self.groups_followed.append(group)
             following = True
+            logger.info("{} is now following {}".format(self, group))
 
         return following
 
