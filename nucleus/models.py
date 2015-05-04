@@ -2061,7 +2061,7 @@ class GroupMemberAssociation(db.Model):
     persona = db.relationship("Persona", backref="group_assocs")
 
     # Role may be either 'admin' or 'member'
-    role = db.Column(db.String(16), default="follower")
+    role = db.Column(db.String(16), default="member")
     created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     description = db.Column(db.Text)
     active = db.Column(db.Boolean, default=True)
@@ -2105,7 +2105,7 @@ class Group(Identity):
     admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
     admin = db.relationship("Persona", primaryjoin="persona.c.id==group.c.admin_id")
 
-    planet_assocs = db.relationship("GroupMemberAssociation",
+    members = db.relationship("GroupMemberAssociation",
         backref="group",
         lazy="dynamic")
 
@@ -2150,6 +2150,25 @@ class Group(Identity):
         if Serializable.authorize(self, action, author_id=author_id):
             return self.admin_id == author_id
         return False
+
+    def current_role(self):
+        """Return role of the currently active Persona
+
+        Returns:
+            String: Name  of the role. One of "anonymous", "visitor",
+                "member", "admin"
+        """
+        if not current_user or current_user.is_anonymous():
+            rv = "anonymous"
+        else:
+            gma = GroupMemberAssociation.query.filter_by(group_id=self.id). \
+                filter_by(persona_id=current_user.active_persona.id).first()
+
+            if gma is None:
+                rv = "visitor"
+            else:
+                rv = gma.role
+        return rv
 
     def export(self, exclude=[], include=None, update=False):
         if not exclude:
