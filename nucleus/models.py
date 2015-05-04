@@ -2202,6 +2202,15 @@ class Group(Identity):
         """
         return PLANET_STATES[self.state][0]
 
+    @property
+    def member_count(self):
+        """Return number of active members in this group
+
+        Returns:
+            int: member count
+        """
+        return self.members.count()
+
     def remove_member(self, persona):
         """Remove a Persona from this group's local member list
 
