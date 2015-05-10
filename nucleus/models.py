@@ -1355,10 +1355,13 @@ class TagPlanet(Planet):
     tag_id = db.Column(db.String(32), db.ForeignKey('tag.id'))
     tag = db.relationship('Tag', backref="synonyms")
 
-    def __init__(self, title, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         Planet.__init__(self, *args, **kwargs)
         self.id = uuid4().hex
-        self.tag = Tag.get_or_create(title)
+        self.tag = Tag.get_or_create(kwargs["title"])
+
+    def __repr__(self):
+        return "<#{} (#{}) [{}]>".format(self.title, self.tag.name, self.id[:6])
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
