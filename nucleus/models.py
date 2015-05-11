@@ -1324,6 +1324,66 @@ class Planet(Serializable, db.Model):
         return self
 
 
+class Tag(Serializable, db.Model):
+    __tablename__ = "tag"
+
+    id = db.Column(db.String(32), primary_key=True)
+    name = db.Column(db.String(32))
+
+    @classmethod
+    def get_or_create(cls, name, *args, **kwargs):
+        if name is None:
+            raise ValueError("Must give a name")
+
+        inst = cls.query.filter_by(name=name).first()
+        if inst is None:
+            inst = cls.query.join(TagPlanet).filter(TagPlanet.title == name).first()
+            if inst is None:
+                inst = cls(name=name, *args, **kwargs)
+                inst.id = uuid4().hex
+
+        return inst
+
+
+class TagPlanet(Planet):
+    """A Tag"""
+
+    _insert_required = ["id", "title", "created", "modified", "kind", "tag"]
+    _update_required = ["id", "modified"]
+
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    tag_id = db.Column(db.String(32), db.ForeignKey('tag.id'))
+    tag = db.relationship('Tag', backref="synonyms")
+
+    def __init__(self, *args, **kwargs):
+        Planet.__init__(self, *args, **kwargs)
+        self.id = uuid4().hex
+        self.tag = Tag.get_or_create(kwargs["title"])
+
+    def __repr__(self):
+        return "<#{} (#{}) [{}]>".format(self.title, self.tag.name, self.id[:6])
+
+    @staticmethod
+    def create_from_changeset(changeset, update_sender=None, update_recipient=None):
+        stub = TagPlanet()
+        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+            update_sender=update_sender, update_recipient=update_recipient)
+
+        new_planet.tag = Tag.get_or_create(changeset["tag"])
+        return new_planet
+
+    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
+        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+
+        if "tag" in changeset:
+            self.tag = Tag.get_or_create(changeset["tag"])
+        return self
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'tag'
+    }
+
+
 class PicturePlanet(Planet):
     """A Picture attachment"""
 
