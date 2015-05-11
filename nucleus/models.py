@@ -893,8 +893,17 @@ class Star(Serializable, db.Model):
         return False
 
     @property
+    def attachments(self):
+        return self.planet_assocs.join(Planet).filter(Planet.kind != "tag")
+
+    @property
     def comments(self):
         return self.children.filter_by(kind="star")
+
+    @property
+    def tags(self):
+        return self.planet_assocs.join(Planet).filter(Planet.kind == "tag")
+
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
