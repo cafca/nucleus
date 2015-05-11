@@ -3,6 +3,7 @@ import datetime
 import json
 import iso8601
 import semantic_version
+import re
 
 from base64 import b64encode, b64decode
 from flask import url_for, current_app, session
@@ -1532,6 +1533,27 @@ class LinkPlanet(Planet):
         new_planet.url = changeset["url"]
 
         return new_planet
+
+    def iframe_url(self):
+        """Return a URL to embed within an iframe if this link's domain provides such
+
+        Returns:
+            string: URL to embeddable content
+            None: If no method is known to embed content from link's domain
+        """
+        from urlparse import urlparse
+        rv = None
+
+        parsed_uri = urlparse(self.url)
+        if parsed_uri.netloc == "www.youtube.com":
+            # http://stackoverflow.com/a/8260383
+            youtube_re = "^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#\&\?]*).*"
+            matches = re.search(youtube_re, self.url)
+            if matches and matches.groups()[-1] and len(matches.groups()[-1]) == 11:
+                video_id = matches.groups()[-1]
+                rv = "https://www.youtube.com/embed/{id}".format(id=video_id)
+
+        return rv
 
     def favicon_url(self):
         """Return the URL of this Planet's domain favicon
