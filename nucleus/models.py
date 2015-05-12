@@ -265,7 +265,7 @@ class Identity(Serializable, db.Model):
     crypt_public = db.Column(db.Text)
     sign_private = db.Column(db.Text)
     sign_public = db.Column(db.Text)
-    color = db.Column(db.String(6), default="C81D25")
+    color = db.Column(db.String(6), default="B8C5D6")
 
     vesicles = db.relationship(
         'Vesicle',
