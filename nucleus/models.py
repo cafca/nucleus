@@ -234,7 +234,7 @@ t_identity_vesicles = db.Table(
 
 
 class Identity(Serializable, db.Model):
-    """Abstract identity, superclass of Persona and Group
+    """Abstract identity, superclass of Persona and Movement
 
     Attributes:
         _insert_required: Attributes that are serialized
@@ -465,9 +465,9 @@ t_contacts = db.Table('contacts',
     db.UniqueConstraint('left_id', 'right_id', name='_uc_contacts')
 )
 
-t_groups_followed = db.Table('groups_followed',
+t_movements_followed = db.Table('movements_followed',
     db.Column('persona_id', db.String(32), db.ForeignKey('persona.id')),
-    db.Column('group_id', db.String(32), db.ForeignKey('group.id'))
+    db.Column('movement_id', db.String(32), db.ForeignKey('movement.id'))
 )
 
 
@@ -485,7 +485,7 @@ class Persona(Identity):
         'polymorphic_identity': 'persona'
     }
 
-    _insert_required = Identity._insert_required + ["email", "index_id", "contacts", "groups"]
+    _insert_required = Identity._insert_required + ["email", "index_id", "contacts", "movements"]
     _update_required = Identity._update_required
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
@@ -501,10 +501,10 @@ class Persona(Identity):
         primaryjoin='contacts.c.left_id==persona.c.id',
         secondaryjoin='contacts.c.right_id==persona.c.id')
 
-    groups_followed = db.relationship('Group',
-        secondary='groups_followed',
-        primaryjoin='groups_followed.c.persona_id==persona.c.id',
-        secondaryjoin='groups_followed.c.group_id==group.c.id')
+    movements_followed = db.relationship('Movement',
+        secondary='movements_followed',
+        primaryjoin='movements_followed.c.persona_id==persona.c.id',
+        secondaryjoin='movements_followed.c.movement_id==movement.c.id')
 
     index_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
     index = db.relationship('Starmap', primaryjoin='starmap.c.id==persona.c.index_id')
@@ -557,7 +557,7 @@ class Persona(Identity):
         return url_for('persona', id=self.id)
 
     def export(self, exclude=[], include=None, update=False):
-        exclude = set(exclude + ["contacts", "groups", "groups_followed"])
+        exclude = set(exclude + ["contacts", "movements", "movements_followed"])
         data = Identity.export(self, exclude=exclude, include=include, update=update)
 
         data["contacts"] = list()
@@ -566,16 +566,16 @@ class Persona(Identity):
                 "id": contact.id,
             })
 
-        data["groups"] = list()
-        for group in self.groups:
-            data["groups"].append({
-                "id": group.id,
+        data["movements"] = list()
+        for movement in self.movements:
+            data["movements"].append({
+                "id": movement.id,
             })
 
-        data["groups_followed"] = list()
-        for group in self.groups_followed:
-            data["groups_followed"].append({
-                "id": group.id
+        data["movements_followed"] = list()
+        for movement in self.movements_followed:
+            data["movements_followed"].append({
+                "id": movement.id
             })
 
         return data
@@ -640,14 +640,14 @@ class Persona(Identity):
                 "recipient_id": update_sender.id,
             })
 
-        # Request unknown groups
-        groups_to_check = set(changeset["groups"] + changeset["groups_followed"])
-        for group_info in groups_to_check:
-            group = Group.query.get(group_info["id"])
-            if group is None:
+        # Request unknown movements
+        movements_to_check = set(changeset["movements"] + changeset["movements_followed"])
+        for movement_info in movements_to_check:
+            movement = Movement.query.get(movement_info["id"])
+            if movement is None:
                 request_list.append({
-                    "type": "Group",
-                    "id": group_info["id"],
+                    "type": "Movement",
+                    "id": movement_info["id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
@@ -704,17 +704,17 @@ class Persona(Identity):
                     "recipient_id": update_sender.id,
                 })
 
-        # Request unknown groups
-        groups_1 = changeset.get('groups') or []
-        groups_2 = changeset.get('groups_followed') or []
-        groups_to_check = groups_1 + groups_2
+        # Request unknown movements
+        movements_1 = changeset.get('movements') or []
+        movements_2 = changeset.get('movements_followed') or []
+        movements_to_check = movements_1 + movements_2
 
-        for group_info in groups_to_check:
-            group = Group.query.get(group_info["id"])
-            if group is None:
+        for movement_info in movements_to_check:
+            movement = Movement.query.get(movement_info["id"])
+            if movement is None:
                 request_list.append({
-                    "type": "Group",
-                    "id": group_info["id"],
+                    "type": "Movement",
+                    "id": movement_info["id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
@@ -771,55 +771,55 @@ class Persona(Identity):
     def user(self):
         return self.associations[0].user
 
-    def toggle_following_group(self, group):
-        """Toggle whether this Persona is following a group.
+    def toggle_following_movement(self, movement):
+        """Toggle whether this Persona is following a movement.
 
         Args:
-            group (Group): Group entity to be (un)followed
+            movement (Movement): Movement entity to be (un)followed
 
         Returns:
-            boolean -- True if the group is now being followed, False if not
+            boolean -- True if the movement is now being followed, False if not
         """
         following = False
 
         try:
-            self.groups_followed.remove(group)
-            logger.info("{} is not following {} anymore".format(self, group))
+            self.movements_followed.remove(movement)
+            logger.info("{} is not following {} anymore".format(self, movement))
         except ValueError:
-            self.groups_followed.append(group)
+            self.movements_followed.append(movement)
             following = True
-            logger.info("{} is now following {}".format(self, group))
+            logger.info("{} is now following {}".format(self, movement))
 
         return following
 
-    def toggle_group_membership(self, group):
-        """Toggle whether this Persona is member of a group.
+    def toggle_movement_membership(self, movement):
+        """Toggle whether this Persona is member of a movement.
 
-        Also enables group following for this Persona/Group.
+        Also enables movement following for this Persona/Movement.
 
         Args:
-            group (Group): Group entity to be become member of
+            movement (Movement): Movement entity to be become member of
 
         Returns:
-            Updated GroupMemberAssociation object or None if it was deleted
+            Updated MovementMemberAssociation object or None if it was deleted
         """
-        if group not in self.groups_followed:
-            logger.info("Setting {} to follow {}.".format(self, group))
-            self.toggle_following_group(group)
+        if movement not in self.movements_followed:
+            logger.info("Setting {} to follow {}.".format(self, movement))
+            self.toggle_following_movement(movement)
 
-        gms = GroupMemberAssociation.query.filter_by(group_id=group.id). \
+        gms = MovementMemberAssociation.query.filter_by(movement_id=movement.id). \
             filter_by(persona_id=self.id).first()
 
         if gms is None:
-            logger.info("Enabling membership of {} in {}".format(self, group))
-            gms = GroupMemberAssociation(
+            logger.info("Enabling membership of {} in {}".format(self, movement))
+            gms = MovementMemberAssociation(
                 persona=self,
-                group_id=group.id,
+                movement_id=movement.id,
                 role="member",
             )
             rv = gms
         else:
-            logger.info("Removing membership of {} in {}".format(self, group))
+            logger.info("Removing membership of {} in {}".format(self, movement))
             gms.query.delete()
             rv = None
         return rv
@@ -1923,8 +1923,8 @@ class Starmap(Serializable, db.Model):
     def __repr__(self):
         if self.kind == "persona_profile":
             name = "Persona-Profile"
-        elif self.kind == "group_profile":
-            name = "Group-Profile"
+        elif self.kind == "movement_profile":
+            name = "Movement-Profile"
         else:
             name = "Starmap"
 
@@ -1947,7 +1947,7 @@ class Starmap(Serializable, db.Model):
             if self.kind == "persona_profile":
                 p = Persona.request_persona(self.author_id)
                 return p.id == author_id
-            elif self.kind == "group_profile":
+            elif self.kind == "movement_profile":
                 # Everyone can update
                 if action == "update":
                     return True
@@ -1997,9 +1997,9 @@ class Starmap(Serializable, db.Model):
         if self.kind == "persona_profile":
             p = Persona.query.filter(Persona.profile_id == self.id).first()
             return url_for("persona", id=p.id)
-        elif self.kind == "group_profile":
-            g = Group.query.filter(Group.profile_id == self.id).first()
-            return url_for("group", id=g.id)
+        elif self.kind == "movement_profile":
+            g = Movement.query.filter(Movement.profile_id == self.id).first()
+            return url_for("movement", id=g.id)
         elif self.kind == "index":
             p = Persona.query.filter(Persona.index_id == self.id).first()
             return url_for("persona", id=p.id)
@@ -2146,13 +2146,13 @@ class Starmap(Serializable, db.Model):
             request_objects.send(Starmap.create_from_changeset, message=req)
 
 
-class GroupMemberAssociation(db.Model):
-    """Associates Personas with Groups"""
+class MovementMemberAssociation(db.Model):
+    """Associates Personas with Movements"""
 
-    __tablename__ = 'groupmember_association'
-    group_id = db.Column(db.String(32), db.ForeignKey('group.id'), primary_key=True)
+    __tablename__ = 'movementmember_association'
+    movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'), primary_key=True)
     persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
-    persona = db.relationship("Persona", backref="group_assocs")
+    persona = db.relationship("Persona", backref="movement_assocs")
 
     # Role may be either 'admin' or 'member'
     role = db.Column(db.String(16), default="member")
@@ -2164,29 +2164,29 @@ class GroupMemberAssociation(db.Model):
 
 t_members = db.Table(
     'members',
-    db.Column('group_id', db.String(32), db.ForeignKey('group.id')),
+    db.Column('movement_id', db.String(32), db.ForeignKey('movement.id')),
     db.Column('persona_id', db.String(32), db.ForeignKey('persona.id'))
 )
 
-t_group_vesicles = db.Table(
-    'group_vesicles',
-    db.Column('group_id', db.String(32), db.ForeignKey('group.id')),
+t_movement_vesicles = db.Table(
+    'movement_vesicles',
+    db.Column('movement_id', db.String(32), db.ForeignKey('movement.id')),
     db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Group(Identity):
+class Movement(Identity):
     """Represents an entity that is comprised of users collaborating on stars
 
     Attributes:
-        id (String): 32 byte ID of this group
-        description (String): Text decription of what this group is about
-        admin (Persona): Person that is allowed to make structural changes to the group_id
+        id (String): 32 byte ID of this movement
+        description (String): Text decription of what this movement is about
+        admin (Persona): Person that is allowed to make structural changes to the movement_id
 
     """
 
-    __tablename__ = "group"
-    __mapper_args__ = {'polymorphic_identity': 'group'}
+    __tablename__ = "movement"
+    __mapper_args__ = {'polymorphic_identity': 'movement'}
 
     _insert_required = Identity._insert_required + ["admin_id", "description", "profile_id"]
     _update_required = Identity._update_required + ["state"]
@@ -2197,19 +2197,19 @@ class Group(Identity):
     state = db.Column(db.Integer, default=0)
 
     admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-    admin = db.relationship("Persona", primaryjoin="persona.c.id==group.c.admin_id")
+    admin = db.relationship("Persona", primaryjoin="persona.c.id==movement.c.admin_id")
 
-    members = db.relationship("GroupMemberAssociation",
-        backref="group",
+    members = db.relationship("MovementMemberAssociation",
+        backref="movement",
         lazy="dynamic")
 
     def __init__(self, *args, **kwargs):
-        """Attach index starmap to new groups"""
+        """Attach index starmap to new movements"""
         Identity.__init__(self, *args, **kwargs)
         index = Starmap(
             id=uuid4().hex,
             author=self.admin,
-            kind="group_profile",
+            kind="movement_profile",
             modified=self.created)
 
         self.profile = index
@@ -2220,10 +2220,10 @@ class Group(Identity):
         except AttributeError:
             name = "(name encode error)"
 
-        return "<Group @{} [{}]>".format(name, self.id[:6])
+        return "<Movement @{} [{}]>".format(name, self.id[:6])
 
     def add_member(self, persona):
-        """Add a Persona as member to this group
+        """Add a Persona as member to this movement
 
         Args:
             persona (Persona): Persona object to be added
@@ -2232,7 +2232,7 @@ class Group(Identity):
             self.members.append(persona)
 
     def authorize(self, action, author_id=None):
-        """Return True if this Group authorizes `action` for `author_id`
+        """Return True if this Movement authorizes `action` for `author_id`
 
         Args:
             action (String): Action to be performed (see Synapse.CHANGE_TYPES)
@@ -2255,7 +2255,7 @@ class Group(Identity):
         if not current_user or current_user.is_anonymous():
             rv = "anonymous"
         else:
-            gma = GroupMemberAssociation.query.filter_by(group_id=self.id). \
+            gma = MovementMemberAssociation.query.filter_by(movement_id=self.id). \
                 filter_by(persona_id=current_user.active_persona.id).first()
 
             if gma is None:
@@ -2281,7 +2281,7 @@ class Group(Identity):
 
     def get_state(self):
         """
-        Return publishing state of this Group. (temporarily uses planet states)
+        Return publishing state of this Movement. (temporarily uses planet states)
 
         Returns:
             Integer:
@@ -2296,7 +2296,7 @@ class Group(Identity):
 
     @property
     def member_count(self):
-        """Return number of active members in this group
+        """Return number of active members in this movement
 
         Returns:
             int: member count
@@ -2304,7 +2304,7 @@ class Group(Identity):
         return self.members.count()
 
     def remove_member(self, persona):
-        """Remove a Persona from this group's local member list
+        """Remove a Persona from this movement's local member list
 
         Args:
             persona (Persona): Persona object to be removed
@@ -2314,7 +2314,7 @@ class Group(Identity):
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this Group (temporarily uses planet states)
+        Set the publishing state of this Movement (temporarily uses planet states)
 
         Parameters:
             new_state (int) code of the new state as defined in nucleus.PLANET_STATES
@@ -2330,10 +2330,10 @@ class Group(Identity):
             self.state = new_state
 
     def update_members(self, new_member_list):
-        """Update Groups's members from a list of the new members.
+        """Update Movements's members from a list of the new members.
 
-        This method may only be used with an authoritative list of group
-        members (i.e. from the group admin).
+        This method may only be used with an authoritative list of movement
+        members (i.e. from the movement admin).
 
         Args:
             new_member_list (list): List of dictionaries with keys:
@@ -2377,18 +2377,18 @@ class Group(Identity):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None, request_sources=True):
-        """Create a new group from changeset"""
-        group = Identity.create_from_changeset(changeset,
+        """Create a new movement from changeset"""
+        movement = Identity.create_from_changeset(changeset,
             stub=stub,
             update_sender=update_sender,
             update_recipient=update_recipient,
-            kind=Group,
+            kind=Movement,
             request_sources=request_sources)
 
-        group.description = changeset["description"]
+        movement.description = changeset["description"]
 
         if "state" in changeset:
-            group.set_state(changeset["state"])
+            movement.set_state(changeset["state"])
 
         request_list = list()
 
@@ -2408,10 +2408,10 @@ class Group(Identity):
             )
             admin._stub = True
 
-        group.admin = admin
+        movement.admin = admin
 
         if "members" in changeset:
-            mc = group.update_members(changeset["members"])
+            mc = movement.update_members(changeset["members"])
             for m in mc:
                 request_list.append({
                     "type": "Persona",
@@ -2422,16 +2422,16 @@ class Group(Identity):
 
         if request_sources:
             for req in request_list:
-                request_objects.send(Group.create_from_changeset, message=req)
+                request_objects.send(Movement.create_from_changeset, message=req)
 
-        return group
+        return movement
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update group. See Serializable.update_from_changeset"""
+        """Update movement. See Serializable.update_from_changeset"""
         Identity.update_from_changeset(self, changeset,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        logger.info("Now applying Group-specific updates for {}".format(self))
+        logger.info("Now applying Movement-specific updates for {}".format(self))
 
         request_list = list()
 
@@ -2472,4 +2472,4 @@ class Group(Identity):
         logger.info("Updated {} from changeset. Requesting {} objects.".format(self, len(request_list)))
 
         for req in request_list:
-            request_objects.send(Group.update_from_changeset, message=req)
+            request_objects.send(Movement.update_from_changeset, message=req)
