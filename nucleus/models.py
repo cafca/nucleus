@@ -863,6 +863,7 @@ class Star(Serializable, db.Model):
         primaryjoin='star_vesicles.c.star_id==star.c.id',
         secondaryjoin='star_vesicles.c.vesicle_id==vesicle.c.id')
 
+    context_length = db.Column(db.Integer, default=3)
     parent = db.relationship('Star',
         primaryjoin='and_(remote(Star.id)==Star.parent_id, Star.state>=0)',
         backref=db.backref('children', lazy="dynamic"),
@@ -905,7 +906,6 @@ class Star(Serializable, db.Model):
     @property
     def tags(self):
         return self.planet_assocs.join(Planet).filter(Planet.kind == "tag")
-
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
