@@ -2018,6 +2018,21 @@ class Starmap(Serializable, db.Model):
 
         return data
 
+    @property
+    def name(self):
+        """Return an identifier for this Starmap that can be used in UI
+
+        Returns:
+            string: Name for this Starmap
+        """
+        if self.kind == "persona_profile":
+            rv = "Profile of {}".format(self.author.username)
+        elif self.kind == "movement_profile":
+            rv = "Mindspace of {}".format(self.author.username)
+        else:
+            rv = "Starmap by {}".format(self.author.username)
+        return rv
+
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
         """Create a new Starmap object from a changeset
