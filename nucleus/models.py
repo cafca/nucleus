@@ -1943,13 +1943,13 @@ class Starmap(Serializable, db.Model):
             string: URL of the Starmap
         """
         if self.kind == "persona_profile":
-            p = Persona.query.filter_by(profile_id=self.id)
+            p = Persona.query.filter_by(profile_id=self.id).first()
             rv = url_for("web.persona", id=p.id)
         elif self.kind == "movement_profile":
-            m = Movement.query.filter_by(profile_id=self.id)
+            m = Movement.query.filter_by(profile_id=self.id).first()
             rv = url_for("web.movement_profile", id=m.id)
         elif self.kind == "movement_mindspace":
-            m = Movement.query.filter_by(profile_id=self.id)
+            m = Movement.query.filter_by(profile_id=self.id).first()
             rv = url_for("web.movement", id=m.id)
         else:
             rv = None
