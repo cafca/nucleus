@@ -1892,10 +1892,10 @@ class Starmap(Serializable, db.Model):
 
     author_id = db.Column(
         db.String(32),
-        db.ForeignKey('persona.id', use_alter=True, name="fk_author_id"))
-    author = db.relationship('Persona',
+        db.ForeignKey('identity.id', use_alter=True, name="fk_identity_id"))
+    author = db.relationship('Identity',
         backref=db.backref('starmaps'),
-        primaryjoin="Persona.id==Starmap.author_id",
+        primaryjoin="Identity.id==Starmap.author_id",
         post_update=True)
 
     index = db.relationship(
@@ -2208,7 +2208,7 @@ class Movement(Identity):
         Identity.__init__(self, *args, **kwargs)
         index = Starmap(
             id=uuid4().hex,
-            author=self.admin,
+            author=self,
             kind="movement_profile",
             modified=self.created)
 
