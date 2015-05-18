@@ -274,10 +274,10 @@ class Identity(Serializable, db.Model):
         secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
     profile_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    profile = db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.profile_id')
+    profile = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.profile_id')
 
     mindspace_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    mindspace = db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.mindspace_id')
+    mindspace = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.mindspace_id')
 
     __mapper_args__ = {
         'polymorphic_identity': 'identity',
@@ -1924,8 +1924,10 @@ class Starmap(Serializable, db.Model):
         return (key in self.index)
 
     def __repr__(self):
-        if self.kind in ["persona_profile", "movement_profile"]:
+        if self.kind.endswith("_profile"):
             name = "Profile of "
+        if self.kind.endswith("_mindspace"):
+            name = "Mindspace of "
         else:
             name = "Starmap by"
 
@@ -1933,6 +1935,26 @@ class Starmap(Serializable, db.Model):
 
     def __len__(self):
         return self.index.paginate(1).total
+
+    def absolute_url(self):
+        """Return an absolute URL, depending on Starmap kind
+
+        Returns:
+            string: URL of the Starmap
+        """
+        if self.kind == "persona_profile":
+            p = Persona.query.filter_by(profile_id=self.id)
+            rv = url_for("web.persona", id=p.id)
+        elif self.kind == "movement_profile":
+            m = Movement.query.filter_by(profile_id=self.id)
+            rv = url_for("web.movement_profile", id=m.id)
+        elif self.kind == "movement_mindspace":
+            m = Movement.query.filter_by(profile_id=self.id)
+            rv = url_for("web.movement", id=m.id)
+        else:
+            rv = None
+
+        return rv
 
     def authorize(self, action, author_id=None):
         """Return True if this Starmap authorizes `action` for `author_id`
@@ -1995,15 +2017,23 @@ class Starmap(Serializable, db.Model):
 
     def get_absolute_url(self):
         """Return URL for this Starmap depending on kind"""
-        if self.kind == "persona_profile":
+        rv = None
+        if self.kind.startswith("movement"):
+            m = Movement.query.filter(Movement.profile_id == self.id).first()
+            if self.kind == "movement_profile":
+                rv = url_for("web.movement_profile", id=g.id)
+            elif self.kind == "movement_mindspace":
+                rv = url_for("web.movement", id=m.id)
+        elif self.kind.startswith("persona"):
             p = Persona.query.filter(Persona.profile_id == self.id).first()
-            return url_for("persona", id=p.id)
-        elif self.kind == "movement_profile":
-            g = Movement.query.filter(Movement.profile_id == self.id).first()
-            return url_for("movement", id=g.id)
+            if self.kind == "persona_profile":
+                rv = url_for("web.persona", id=p.id)
+            elif self.kind == "persona_mindspace" and self.author == current_user.active_persona:
+                rv = url_for("web.persona", id=p.id)
         elif self.kind == "index":
             p = Persona.query.filter(Persona.index_id == self.id).first()
-            return url_for("persona", id=p.id)
+            rv = url_for("persona", id=p.id)
+        return rv
 
     def export(self, exclude=[], include=None, update=False):
         ex = set(exclude + ["index", ])
@@ -2224,11 +2254,17 @@ class Movement(Identity):
         Identity.__init__(self, *args, **kwargs)
         index = Starmap(
             id=uuid4().hex,
-            author=self.admin,
+            author=self,
             kind="movement_profile",
             modified=self.created)
-
         self.profile = index
+
+        mindspace = Starmap(
+            id=uuid4().hex,
+            author=self,
+            kind="movement_mindspace",
+            modified=self.created)
+        self.mindspace = mindspace
 
     def __repr__(self):
         try:
