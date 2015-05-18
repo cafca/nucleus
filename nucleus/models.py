@@ -276,6 +276,9 @@ class Identity(Serializable, db.Model):
     profile_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
     profile = db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.profile_id')
 
+    mindspace_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    mindspace = db.relationship('Starmap', backref="contexts", primaryjoin='starmap.c.id==identity.c.mindspace_id')
+
     __mapper_args__ = {
         'polymorphic_identity': 'identity',
         'polymorphic_on': kind
@@ -1892,7 +1895,7 @@ class Starmap(Serializable, db.Model):
 
     author_id = db.Column(
         db.String(32),
-        db.ForeignKey('identity.id', use_alter=True, name="fk_identity_id"))
+        db.ForeignKey('identity.id', use_alter=True, name="fk_author_id"))
     author = db.relationship('Identity',
         backref=db.backref('starmaps'),
         primaryjoin="Identity.id==Starmap.author_id",
@@ -1921,14 +1924,12 @@ class Starmap(Serializable, db.Model):
         return (key in self.index)
 
     def __repr__(self):
-        if self.kind == "persona_profile":
-            name = "Persona-Profile"
-        elif self.kind == "movement_profile":
-            name = "Movement-Profile"
+        if self.kind in ["persona_profile", "movement_profile"]:
+            name = "Profile of "
         else:
-            name = "Starmap"
+            name = "Starmap by"
 
-        return "<{} (by {}) [{}]>".format(name, self.author, self.id[:6])
+        return "<{} {} [{}]>".format(name, self.author, self.id[:6])
 
     def __len__(self):
         return self.index.paginate(1).total
@@ -2049,7 +2050,7 @@ class Starmap(Serializable, db.Model):
         """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
-        author = Persona.query.get(changeset["author_id"])
+        author = Identity.query.get(changeset["author_id"])
         if author is None:
             raise PersonaNotFoundError("Starmap author not known")
 
@@ -2080,7 +2081,7 @@ class Starmap(Serializable, db.Model):
                 })
 
                 if star is None:
-                    star_author = Persona.query.get(star_changeset["author_id"])
+                    star_author = Identity.query.get(star_changeset["author_id"])
                     if star_author is not None:
                         star = Star(
                             id=star_changeset["id"],
@@ -2223,7 +2224,7 @@ class Movement(Identity):
         Identity.__init__(self, *args, **kwargs)
         index = Starmap(
             id=uuid4().hex,
-            author=self,
+            author=self.admin,
             kind="movement_profile",
             modified=self.created)
 
