@@ -1950,7 +1950,7 @@ class Starmap(Serializable, db.Model):
             rv = url_for("web.movement_blog", id=m.id)
         elif self.kind == "movement_mindspace":
             m = Movement.query.filter_by(profile_id=self.id).first()
-            rv = url_for("web.movement", id=m.id)
+            rv = url_for("web.movement_mindspace", id=m.id)
         else:
             rv = None
 
