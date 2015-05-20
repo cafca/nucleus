@@ -246,13 +246,13 @@ class Identity(Serializable, db.Model):
         sign_public: Public signing RSA key, JSON encoded KeyCzar export
         modified: Last time this Identity object was modified, defaults to now
         vesicles: List of Vesicles that describe this Identity object
-        profile: Starmap containing this Identity's profile page
+        blog: Starmap containing this Identity's blog
 
     """
 
     __tablename__ = "identity"
 
-    _insert_required = ["id", "username", "crypt_public", "sign_public", "modified", "profile_id"]
+    _insert_required = ["id", "username", "crypt_public", "sign_public", "modified", "blog_id"]
     _update_required = ["id", "modified"]
 
     _stub = db.Column(db.Boolean, default=False)
@@ -273,8 +273,8 @@ class Identity(Serializable, db.Model):
         primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
         secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
-    profile_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    profile = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.profile_id')
+    blog_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    blog = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.blog_id')
 
     mindspace_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
     mindspace = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.mindspace_id')
@@ -397,22 +397,22 @@ class Identity(Serializable, db.Model):
                 modified=modified_dt,
             )
 
-        # Update profile
-        profile = Starmap.query.get(changeset["profile_id"])
-        if profile is None or profile.get_state() == -1:
+        # Update blog
+        blog = Starmap.query.get(changeset["blog_id"])
+        if blog is None or blog.get_state() == -1:
             request_list.append({
                 "type": "Starmap",
-                "id": changeset["profile_id"],
+                "id": changeset["blog_id"],
                 "author_id": update_recipient.id if update_recipient else None,
                 "recipient_id": update_sender.id if update_sender else None,
-                "id": changeset["profile_id"]
+                "id": changeset["blog_id"]
             })
 
-        if profile is None:
-            profile = Starmap(id=changeset["profile_id"])
-            profile.state = -1
+        if blog is None:
+            blog = Starmap(id=changeset["blog_id"])
+            blog.state = -1
 
-        ident.profile = profile
+        ident.blog = blog
 
         logger.info("Created {} from changeset, now requesting {} linked objects".format(
             ident, len(request_list)))
@@ -438,20 +438,20 @@ class Identity(Serializable, db.Model):
             self.username = changeset["username"]
             logger.info("Updated {}'s {}".format(self.username, "username"))
 
-        # Update profile
-        if "profile_id" in changeset:
-            profile = Starmap.query.get(changeset["profile_id"])
-            if profile is None or profile.get_state() == -1:
+        # Update blog
+        if "blog_id" in changeset:
+            blog = Starmap.query.get(changeset["blog_id"])
+            if blog is None or blog.get_state() == -1:
                 request_list.append({
                     "type": "Starmap",
-                    "id": changeset["profile_id"],
+                    "id": changeset["blog_id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
-                logger.info("Requested {}'s {}".format(self.username, "profile starmap"))
+                logger.info("Requested {}'s {}".format(self.username, "blog starmap"))
             else:
-                self.profile = profile
-                logger.info("Updated {}'s {}".format(self.username, "profile starmap"))
+                self.blog = blog
+                logger.info("Updated {}'s {}".format(self.username, "blog starmap"))
 
         logger.info("Updated {} identity from changeset. Requesting {} objects.".format(self, len(request_list)))
 
@@ -1924,8 +1924,8 @@ class Starmap(Serializable, db.Model):
         return (key in self.index)
 
     def __repr__(self):
-        if self.kind.endswith("_profile"):
-            name = "Profile of "
+        if self.kind.endswith("_blog"):
+            name = "Blog of "
         if self.kind.endswith("_mindspace"):
             name = "Mindspace of "
         else:
@@ -1935,26 +1935,6 @@ class Starmap(Serializable, db.Model):
 
     def __len__(self):
         return self.index.paginate(1).total
-
-    def absolute_url(self):
-        """Return an absolute URL, depending on Starmap kind
-
-        Returns:
-            string: URL of the Starmap
-        """
-        if self.kind == "persona_profile":
-            p = Persona.query.filter_by(profile_id=self.id).first()
-            rv = url_for("web.persona", id=p.id)
-        elif self.kind == "movement_profile":
-            m = Movement.query.filter_by(profile_id=self.id).first()
-            rv = url_for("web.movement_blog", id=m.id)
-        elif self.kind == "movement_mindspace":
-            m = Movement.query.filter_by(profile_id=self.id).first()
-            rv = url_for("web.movement_mindspace", id=m.id)
-        else:
-            rv = None
-
-        return rv
 
     def authorize(self, action, author_id=None):
         """Return True if this Starmap authorizes `action` for `author_id`
@@ -1967,10 +1947,10 @@ class Starmap(Serializable, db.Model):
             Boolean: True if authorized
         """
         if Serializable.authorize(self, action, author_id=author_id):
-            if self.kind == "persona_profile":
+            if self.kind == "persona_blog":
                 p = Persona.request_persona(self.author_id)
                 return p.id == author_id
-            elif self.kind == "movement_profile":
+            elif self.kind == "movement_blog":
                 # Everyone can update
                 if action == "update":
                     return True
@@ -2018,21 +1998,27 @@ class Starmap(Serializable, db.Model):
     def get_absolute_url(self):
         """Return URL for this Starmap depending on kind"""
         rv = None
+
         if self.kind.startswith("movement"):
-            m = Movement.query.filter(Movement.profile_id == self.id).first()
-            if self.kind == "movement_profile":
-                rv = url_for("web.movement_profile", id=g.id)
-            elif self.kind == "movement_mindspace":
-                rv = url_for("web.movement", id=m.id)
+            if self.kind == "movement_blog":
+                m = Movement.query.filter(Movement.blog_id == self.id).first()
+                rv = url_for("web.movement_blog", id=m.id)
+            elif self.kind == "movement_mspace":
+                m = Movement.query.filter(Movement.mindspace_id == self.id).first()
+                rv = url_for("web.movement_mindspace", id=m.id)
+
         elif self.kind.startswith("persona"):
-            p = Persona.query.filter(Persona.profile_id == self.id).first()
-            if self.kind == "persona_profile":
+            if self.kind == "persona_blog":
+                p = Persona.query.filter(Persona.blog_id == self.id).first()
                 rv = url_for("web.persona", id=p.id)
-            elif self.kind == "persona_mindspace" and self.author == current_user.active_persona:
+            elif self.kind == "persona_mspace" and self.author == current_user.active_persona:
+                p = Persona.query.filter(Persona.mindspace_id == self.id).first()
                 rv = url_for("web.persona", id=p.id)
+
         elif self.kind == "index":
             p = Persona.query.filter(Persona.index_id == self.id).first()
             rv = url_for("persona", id=p.id)
+
         return rv
 
     def export(self, exclude=[], include=None, update=False):
@@ -2056,9 +2042,9 @@ class Starmap(Serializable, db.Model):
         Returns:
             string: Name for this Starmap
         """
-        if self.kind == "persona_profile":
+        if self.kind == "persona_blog":
             rv = "Profile of {}".format(self.author.username)
-        elif self.kind == "movement_profile":
+        elif self.kind == "movement_blog":
             rv = "Mindspace of {}".format(self.author.username)
         else:
             rv = "Starmap by {}".format(self.author.username)
@@ -2234,7 +2220,7 @@ class Movement(Identity):
     __tablename__ = "movement"
     __mapper_args__ = {'polymorphic_identity': 'movement'}
 
-    _insert_required = Identity._insert_required + ["admin_id", "description", "profile_id"]
+    _insert_required = Identity._insert_required + ["admin_id", "description", "blog_id"]
     _update_required = Identity._update_required + ["state"]
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
@@ -2255,9 +2241,9 @@ class Movement(Identity):
         index = Starmap(
             id=uuid4().hex,
             author=self,
-            kind="movement_profile",
+            kind="movement_blog",
             modified=self.created)
-        self.profile = index
+        self.blog = index
 
         mindspace = Starmap(
             id=uuid4().hex,
