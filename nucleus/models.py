@@ -2043,7 +2043,7 @@ class Starmap(Serializable, db.Model):
             string: Name for this Starmap
         """
         if self.kind == "persona_blog":
-            rv = "Profile of {}".format(self.author.username)
+            rv = "Blog of {}".format(self.author.username)
         elif self.kind == "movement_blog":
             rv = "Mindspace of {}".format(self.author.username)
         else:
