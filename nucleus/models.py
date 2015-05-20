@@ -824,6 +824,8 @@ class Persona(Identity):
             )
             rv = gms
         else:
+            if self.id == movement.admin_id:
+                raise NotImplementedError("Admin can't leave the movement")
             logger.info("Removing membership of {} in {}".format(self, movement))
             gms.query.delete()
             rv = None
@@ -1926,14 +1928,7 @@ class Starmap(Serializable, db.Model):
         return (key in self.index)
 
     def __repr__(self):
-        if self.kind.endswith("_blog"):
-            name = "Blog of "
-        if self.kind.endswith("_mindspace"):
-            name = "Mindspace of "
-        else:
-            name = "Starmap by"
-
-        return "<{} {} [{}]>".format(name, self.author, self.id[:6])
+        return "<{} [{}]>".format(self.name(), self.id[:6])
 
     def __len__(self):
         return self.index.paginate(1).total
@@ -2044,9 +2039,9 @@ class Starmap(Serializable, db.Model):
         Returns:
             string: Name for this Starmap
         """
-        if self.kind == "persona_blog":
+        if self.kind.endswith("_blog"):
             rv = "Blog of {}".format(self.author.username)
-        elif self.kind == "movement_blog":
+        if self.kind.endswith("_mspace"):
             rv = "Mindspace of {}".format(self.author.username)
         else:
             rv = "Starmap by {}".format(self.author.username)
