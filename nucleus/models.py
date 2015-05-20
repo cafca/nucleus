@@ -795,13 +795,15 @@ class Persona(Identity):
 
         return following
 
-    def toggle_movement_membership(self, movement):
+    def toggle_movement_membership(self, movement, role="member"):
         """Toggle whether this Persona is member of a movement.
 
         Also enables movement following for this Persona/Movement.
 
         Args:
             movement (Movement): Movement entity to be become member of
+            role (String): What role to take in the movement. May be "member"
+                or "admin"
 
         Returns:
             Updated MovementMemberAssociation object or None if it was deleted
@@ -818,7 +820,7 @@ class Persona(Identity):
             gms = MovementMemberAssociation(
                 persona=self,
                 movement_id=movement.id,
-                role="member",
+                role=role,
             )
             rv = gms
         else:
