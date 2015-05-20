@@ -2248,7 +2248,7 @@ class Movement(Identity):
         mindspace = Starmap(
             id=uuid4().hex,
             author=self,
-            kind="movement_mindspace",
+            kind="movement_mspace",
             modified=self.created)
         self.mindspace = mindspace
 
