@@ -1402,6 +1402,67 @@ class TagPlanet(Planet):
     }
 
 
+class Mention(Planet):
+    """Mention an Identity to notify them"""
+
+    _insert_required = ["id", "created", "modified", "kind", "identity_id",
+        "text"]
+    _update_required = ["id", "modified"]
+
+    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    identity_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+    identity = db.relationship('Identity', backref="mentions")
+    text = db.Column(db.String(80))
+
+    def __init__(self, *args, **kwargs):
+        Planet.__init__(self, *args, **kwargs)
+        self.id = uuid4().hex
+
+        for k in ["identity", "text"]:
+            if k not in kwargs:
+                raise ValueError("Missing parmeter {}".format(k))
+
+        self.identity = kwargs["identity"]
+        self.text = kwargs["text"]
+
+    def __repr__(self):
+        return "<Mention @{} [{}]>".format(self.text, self.id[:6])
+
+
+    @staticmethod
+    def create_from_changeset(changeset, update_sender=None, update_recipient=None):
+        stub = TagPlanet()
+        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+            update_sender=update_sender, update_recipient=update_recipient)
+
+        new_planet.identity = Identity.get(changeset["identity_id"])
+        if new_planet.identity is None:
+            raise PersonaNotFoundError("Mention links Identity {}".format(
+                changeset["identity_id"]))
+
+        new_planet.text = changeset["text"]
+
+        return new_planet
+
+    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
+        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+
+        if "identity_id" in changeset:
+            self.identity = Identity.get(changeset["identity_id"])
+            if self.identity is None:
+                raise PersonaNotFoundError("Mention links Identity {}".format(
+                    changeset["identity_id"]))
+
+        if "text" in changeset:
+            self.text = changeset["text"]
+
+        return self
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'mention'
+    }
+
+
 class PicturePlanet(Planet):
     """A Picture attachment"""
 
@@ -1928,7 +1989,7 @@ class Starmap(Serializable, db.Model):
         return (key in self.index)
 
     def __repr__(self):
-        return "<{} [{}]>".format(self.name(), self.id[:6])
+        return "<{} [{}]>".format(self.name, self.id[:6])
 
     def __len__(self):
         return self.index.paginate(1).total
