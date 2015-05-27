@@ -59,6 +59,8 @@ ONEUP_STATES = {
 
 CHANGE_TYPES = ("insert", "update", "delete")
 
+ATTACHMENT_KINDS = ("link", "linkedpicture", "picture", "text")
+
 
 class InvalidSignatureError(Exception):
     """Throw this error when a signature fails authenticity checks"""
