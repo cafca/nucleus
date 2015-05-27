@@ -2072,8 +2072,7 @@ class Starmap(Serializable, db.Model):
                 p = Persona.query.filter(Persona.blog_id == self.id).first()
                 rv = url_for("web.persona", id=p.id)
             elif self.kind == "persona_mspace" and self.author == current_user.active_persona:
-                p = Persona.query.filter(Persona.mindspace_id == self.id).first()
-                rv = url_for("web.persona", id=p.id)
+                rv = url_for("web.persona", id=self.author_id)
 
         elif self.kind == "index":
             p = Persona.query.filter(Persona.index_id == self.id).first()
