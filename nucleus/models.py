@@ -906,7 +906,7 @@ class Star(Serializable, db.Model):
     def attachments(self):
         return self.planet_assocs \
             .join(Planet) \
-            .filter(Planet.kind in ATTACHMENT_KINDS)
+            .filter(Planet.kind.in_(ATTACHMENT_KINDS))
 
     @property
     def comments(self):
