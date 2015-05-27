@@ -12,7 +12,7 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from uuid import uuid4
 
-from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, ATTACHMENT_KINDS \
+from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES, logger, planet_sort_rank
 from .helpers import epoch_seconds
