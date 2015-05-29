@@ -1663,11 +1663,12 @@ class TextPlanet(Planet):
     }
 
     @classmethod
-    def get_or_create(cls, text):
+    def get_or_create(cls, text, source=None):
         """Return planet containing text if it already exists or create it
 
         Args:
-            text: Content value of the TextPlanet
+            text (String): Content value of the TextPlanet
+            source (String): Source description, max 128 chars
         """
         h = sha256(text.encode('utf-8')).hexdigest()[:32]
         planet = TextPlanet.query.get(h)
@@ -1676,7 +1677,8 @@ class TextPlanet(Planet):
             logger.info("Storing new text")
             planet = TextPlanet(
                 id=h,
-                text=text)
+                text=text,
+                source=source)
 
         return planet
 
