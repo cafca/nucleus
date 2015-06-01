@@ -844,7 +844,8 @@ class Star(Serializable, db.Model):
 
     __tablename__ = "star"
 
-    _insert_required = ["id", "text", "created", "modified", "author_id", "planet_assocs", "parent_id"]
+    _insert_required = ["id", "text", "created", "modified", "author_id",
+        "planet_assocs", "parent_id", "starmap_id"]
     _update_required = ["id", "text", "modified"]
 
     id = db.Column(db.String(32), primary_key=True)
@@ -871,11 +872,17 @@ class Star(Serializable, db.Model):
         secondaryjoin='star_vesicles.c.vesicle_id==vesicle.c.id')
 
     context_length = db.Column(db.Integer, default=3)
+
     parent = db.relationship('Star',
         primaryjoin='and_(remote(Star.id)==Star.parent_id, Star.state>=0)',
         backref=db.backref('children', lazy="dynamic"),
         remote_side='Star.id')
     parent_id = db.Column(db.String(32), db.ForeignKey('star.id'))
+
+    starmap = db.relationship('Starmap',
+        primaryjoin='starmap.c.id==star.c.starmap_id',
+        backref=db.backref('index', lazy="dynamic"))
+    starmap_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
 
     __mapper_args__ = {
         'polymorphic_identity': 'star',
@@ -928,6 +935,7 @@ class Star(Serializable, db.Model):
             star.author = None
             star.created = created_dt
             star.modified = modified_dt
+            star.starmap_id = changeset["starmap_id"]
         else:
             star = Star(
                 id=changeset["id"],
@@ -935,6 +943,7 @@ class Star(Serializable, db.Model):
                 author=None,
                 created=created_dt,
                 modified=modified_dt,
+                starmap_id=changeset["starmap_id"]
             )
 
         author = Persona.query.get(changeset["author_id"])
@@ -1429,7 +1438,6 @@ class Mention(Planet):
 
     def __repr__(self):
         return "<Mention @{} [{}]>".format(self.text, self.id[:6])
-
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
@@ -1927,11 +1935,6 @@ class Souma(Serializable, db.Model):
         key_public = RsaPublicKey.Read(self.sign_public)
         return key_public.Verify(data, signature)
 
-t_starmap = db.Table(
-    'starmap_index',
-    db.Column('starmap_id', db.String(32), db.ForeignKey('starmap.id')),
-    db.Column('star_id', db.String(32), db.ForeignKey('star.id'))
-)
 
 t_starmap_vesicles = db.Table(
     'starmap_vesicles',
@@ -1949,7 +1952,7 @@ class Starmap(Serializable, db.Model):
         modified: Datetime of last recorded modification
         author: Persona that created this Starmap
         kind: For what kind of context is this Starmap used
-        index: List of Stars that are contained in this Starmap
+        index: Query for Stars that are contained in this Starmap
         vesicles: List of Vesicles that describe this Starmap
     """
     __tablename__ = 'starmap'
@@ -1969,14 +1972,6 @@ class Starmap(Serializable, db.Model):
         backref=db.backref('starmaps'),
         primaryjoin="Identity.id==Starmap.author_id",
         post_update=True)
-
-    index = db.relationship(
-        'Star',
-        secondary='starmap_index',
-        backref="starmaps",
-        lazy="dynamic",
-        primaryjoin='starmap_index.c.starmap_id==starmap.c.id',
-        secondaryjoin='starmap_index.c.star_id==star.c.id')
 
     vesicles = db.relationship(
         'Vesicle',
@@ -2163,13 +2158,12 @@ class Starmap(Serializable, db.Model):
                         star = Star(
                             id=star_changeset["id"],
                             modified=star_changeset_modified,
-                            author=star_author
+                            author=star_author,
+                            starmap_id=new_starmap.id
                         )
                         star.set_state(-1)
                         db.session.add(star)
                         db.session.commit()
-
-            new_starmap.index.append(star)
 
         db.session.add(new_starmap)
         db.session.commit()
