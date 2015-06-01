@@ -557,7 +557,7 @@ class Persona(Identity):
         return sha256(self.email).hexdigest()
 
     def get_absolute_url(self):
-        return url_for('persona', id=self.id)
+        return url_for('web.persona', id=self.id)
 
     def export(self, exclude=[], include=None, update=False):
         exclude = set(exclude + ["contacts", "movements", "movements_followed"])
@@ -1067,8 +1067,8 @@ class Star(Serializable, db.Model):
         else:
             self.state = new_state
 
-    def get_absolute_url(self):
-        return url_for('star', id=self.id)
+    def get_absolute_url(self, starmap_id):
+        return url_for('web.star', starmap_id=starmap_id, id=self.id)
 
     def hot(self):
         """i reddit"""
@@ -2078,7 +2078,7 @@ class Starmap(Serializable, db.Model):
 
         elif self.kind == "index":
             p = Persona.query.filter(Persona.index_id == self.id).first()
-            rv = url_for("persona", id=p.id)
+            rv = url_for("web.persona", id=p.id)
 
         return rv
 
