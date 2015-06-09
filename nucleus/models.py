@@ -164,7 +164,8 @@ class User(UserMixin, db.Model):
     created = db.Column(db.DateTime)
     modified = db.Column(db.DateTime)
     pw_hash = db.Column(db.String(64))
-    active = db.Column(db.Boolean(), default=False)
+    active = db.Column(db.Boolean(), default=True)
+    validated_on = db.Column(db.DateTime)
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
     signup_code = db.Column(db.String(128))
@@ -216,6 +217,15 @@ class User(UserMixin, db.Model):
             return False
 
         return True
+
+    def validate(self):
+        """Set the validated_on property to the current time"""
+        self.validated_on = datetime.datetime.utcnow()
+
+    @property
+    def validated(self):
+        """Is True if validated_on has been set"""
+        return self.validated_on is not None
 
     @property
     def active_persona(self):
