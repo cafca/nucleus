@@ -934,6 +934,14 @@ class Star(Serializable, db.Model):
         return self.children.filter_by(kind="star")
 
     @property
+    def comments_starmap(self):
+        """Return the Starmap to which comments should be posted or None"""
+        rv = None
+        if self.kind == "movement_mspace":
+            rv = self.starmap
+        return rv
+
+    @property
     def tags(self):
         return self.planet_assocs.join(Planet).filter(Planet.kind == "tag")
 
