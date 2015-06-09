@@ -6,7 +6,7 @@ import semantic_version
 import re
 
 from base64 import b64encode, b64decode
-from flask import url_for, current_app, session
+from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
@@ -321,16 +321,20 @@ class Identity(Serializable, db.Model):
             all neccessary keys are available
         """
         if self.crypt_private is not None and self.sign_private is not None:
-            if self.id == session.get("active_persona"):
-                return True
-            if session.get("active_persona") and Persona.query.get(session.get("active_persona")).user == self.user:
-                return True
+            if not current_user.is_anonymous():
+                if self.id == current_user.active_persona.id:
+                    return True
+                if Persona.query.get(current_user.active_persona.id).user == self.user:
+                    return True
         return False
 
     @staticmethod
     def list_controlled():
-        if session.get("active_persona"):
-            controlled_user = User.query.join(PersonaAssociation).filter(PersonaAssociation.right_id == session["active_persona"]).first()
+        if current_user.active_persona:
+            controlled_user = User.query \
+                .join(PersonaAssociation) \
+                .filter(PersonaAssociation.right_id == current_user.active_persona.id) \
+                .first()
 
             return [asc.persona for asc in controlled_user.associations] if controlled_user else []
         else:
@@ -533,7 +537,7 @@ class Persona(Identity):
         return "<Persona @{} [{}]>".format(name, self.id[:6])
 
     def activate(self):
-        if current_user.is_anonymous:
+        if current_user.is_anonymous():
             return UnauthorizedError("Need to be logged in to activate Personas")
 
         if not self.associations[0].user == current_user:
