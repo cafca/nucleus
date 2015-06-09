@@ -330,7 +330,7 @@ class Identity(Serializable, db.Model):
 
     @staticmethod
     def list_controlled():
-        if current_user.active_persona:
+        if not current_user.is_anonymous() and current_user.active_persona is not None:
             controlled_user = User.query \
                 .join(PersonaAssociation) \
                 .filter(PersonaAssociation.right_id == current_user.active_persona.id) \
