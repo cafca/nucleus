@@ -2352,6 +2352,11 @@ class Movement(Identity):
             return self.admin_id == author_id
         return False
 
+    @property
+    def contacts(self):
+        """Alias for Movememt.members for compatibility with Persona class"""
+        return self.members
+
     def current_role(self):
         """Return role of the currently active Persona
 
