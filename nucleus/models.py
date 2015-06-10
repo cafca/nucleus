@@ -957,9 +957,9 @@ class Star(Serializable, db.Model):
             modified=star_modified,
             starmap=starmap)
 
-        for planet in star.planets:
+        for pa in star.planet_assocs:
             assoc = PlanetAssociation(
-                star=new_star, planet=planet, author=author)
+                star=new_star, planet=pa.planet, author=author)
             new_star.planet_assocs.append(assoc)
 
         return new_star
