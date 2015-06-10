@@ -933,13 +933,36 @@ class Star(Serializable, db.Model):
     def comments(self):
         return self.children.filter_by(kind="star")
 
-    @property
-    def comments_starmap(self):
-        """Return the Starmap to which comments should be posted or None"""
-        rv = None
-        if self.kind == "movement_mspace":
-            rv = self.starmap
-        return rv
+    @classmethod
+    def clone(cls, star, author, starmap):
+        """Return a deep copy of the given Star
+
+        Args:
+            star (Star): The Star object to be copied
+            author (Persona): Author of the new Star
+            starmap (Starmap): Where to put the new star
+
+        Returns:
+            Star: The new copy
+        """
+        star_id = uuid4().hex
+        star_modified = datetime.datetime.utcnow()
+
+        new_star = cls(
+            id=star_id,
+            text=star.text,
+            author=author,
+            parent=star,
+            created=star.created,
+            modified=star_modified,
+            starmap=starmap)
+
+        for planet in star.planets:
+            assoc = PlanetAssociation(
+                star=new_star, planet=planet, author=author)
+            new_star.planet_assocs.append(assoc)
+
+        return new_star
 
     @property
     def tags(self):
