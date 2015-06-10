@@ -529,22 +529,6 @@ class Persona(Identity):
             name = ""
         return "<Persona @{} [{}]>".format(name, self.id[:6])
 
-    def activate(self):
-        if current_user.is_anonymous():
-            return UnauthorizedError("Need to be logged in to activate Personas")
-
-        if not self.associations[0].user == current_user:
-            raise UnauthorizedError("You can't activate foreign Personas")
-
-        for asc in PersonaAssociation.query.filter(PersonaAssociation.user==current_user, PersonaAssociation.active==True):
-            if asc.active and not (asc == self.associations[0]):
-                asc.active = False
-                db.session.add(asc)
-
-        self.associations[0].active = True
-        db.session.add(self.associations[0])
-        db.session.commit()
-
     def authorize(self, action, author_id=None):
         """Return True if this Persona authorizes `action` for `author_id`
 
