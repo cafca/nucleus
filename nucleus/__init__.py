@@ -57,6 +57,16 @@ ONEUP_STATES = {
     1: "unknown author"
 }
 
+ALLOWED_COLORS = {
+    '#0B3954': "Base blue",
+    '#C81D25': "Accent red",
+    '#71A2B6': "Quiet blue",
+    '#F5CB5C': "Yellow",
+    '#8BB174': "Green",
+    '#129490': "Turquiousuioso",
+    '#EF3054': "Bright pink"
+}
+
 CHANGE_TYPES = ("insert", "update", "delete")
 
 ATTACHMENT_KINDS = ("link", "linkedpicture", "picture", "text")
