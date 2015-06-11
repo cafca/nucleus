@@ -151,7 +151,6 @@ class PersonaAssociation(db.Model):
     __tablename__ = "persona_association"
     left_id = db.Column(db.String(32), db.ForeignKey('user.id'), primary_key=True)
     right_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
-    active = db.Column(db.Boolean(), default=False)
     persona = db.relationship("Persona", backref="associations")
 
 
@@ -169,6 +168,8 @@ class User(UserMixin, db.Model):
     authenticated = db.Column(db.Boolean(), default=True)
     associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
     signup_code = db.Column(db.String(128))
+    active_persona = db.relationship("Persona")
+    active_persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
 
     def __repr__(self):
         return "<User {}>".format(self.email.decode('utf-8'))
@@ -226,14 +227,6 @@ class User(UserMixin, db.Model):
     def validated(self):
         """Is True if validated_on has been set"""
         return self.validated_on is not None
-
-    @property
-    def active_persona(self):
-        try:
-            return self.associations.filter_by(active=True).first().persona
-        except AttributeError:
-            # no persona associated
-            return None
 
 
 t_identity_vesicles = db.Table(
@@ -535,22 +528,6 @@ class Persona(Identity):
         except AttributeError:
             name = ""
         return "<Persona @{} [{}]>".format(name, self.id[:6])
-
-    def activate(self):
-        if current_user.is_anonymous():
-            return UnauthorizedError("Need to be logged in to activate Personas")
-
-        if not self.associations[0].user == current_user:
-            raise UnauthorizedError("You can't activate foreign Personas")
-
-        for asc in PersonaAssociation.query.filter(PersonaAssociation.user==current_user, PersonaAssociation.active==True):
-            if asc.active and not (asc == self.associations[0]):
-                asc.active = False
-                db.session.add(asc)
-
-        self.associations[0].active = True
-        db.session.add(self.associations[0])
-        db.session.commit()
 
     def authorize(self, action, author_id=None):
         """Return True if this Persona authorizes `action` for `author_id`
