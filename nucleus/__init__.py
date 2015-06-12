@@ -58,13 +58,13 @@ ONEUP_STATES = {
 }
 
 ALLOWED_COLORS = {
-    '#0B3954': "Base blue",
-    '#C81D25': "Accent red",
-    '#71A2B6': "Quiet blue",
-    '#F5CB5C': "Yellow",
-    '#8BB174': "Green",
-    '#129490': "Turquiousuioso",
-    '#EF3054': "Bright pink"
+    '0b3954': "Base blue",
+    'c81d25': "Accent red",
+    '71a2b6': "Quiet blue",
+    'f5cb5c': "Yellow",
+    '8bb174': "Green",
+    '129490': "Turquiousuioso",
+    'ef3054': "Bright pink"
 }
 
 CHANGE_TYPES = ("insert", "update", "delete")
