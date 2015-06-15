@@ -2121,9 +2121,9 @@ class Starmap(Serializable, db.Model):
             string: Name for this Starmap
         """
         if self.kind.endswith("_blog"):
-            rv = "Blog of {}".format(self.author.username)
-        if self.kind.endswith("_mspace"):
-            rv = "Mindspace of {}".format(self.author.username)
+            rv = "{} blog".format(self.author.username)
+        elif self.kind.endswith("_mspace"):
+            rv = "{} mindspace".format(self.author.username)
         else:
             rv = "Starmap by {}".format(self.author.username)
         return rv
