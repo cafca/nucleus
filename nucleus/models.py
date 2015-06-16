@@ -333,6 +333,13 @@ class Identity(Serializable, db.Model):
         else:
             return []
 
+    def notification_list(self, limit=5):
+        return self.notifications \
+            .filter_by(unread=True) \
+            .order_by(Notification.modified.desc()) \
+            .limit(limit) \
+            .all()
+
     def generate_keys(self, password):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
 
@@ -821,6 +828,71 @@ class Persona(Identity):
             gms.query.delete()
             rv = None
         return rv
+
+
+class Notification(db.Model):
+    """Notification model
+
+    Attributes:
+        id: Integer identifier
+        text: The text displayed in the notifications
+        url: The URL clicking the notification will take the user
+        source: The source of the notification
+        domain: Domain of the notification, used for grouping
+        unread: Whether the notification has been read by the user
+        created: When the notifcation was generated
+        modfied: When some part of the notification was last changed
+        recipient: The Identity for whom this notifcation is intended
+    """
+
+    __tablename__ = "notification"
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'notification',
+        'polymorphic_on': 'domain'
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text)
+    url = db.Column(db.Text)
+    source = db.Column(db.String(128))
+    domain = db.Column(db.String(128))
+    unread = db.Column(db.Boolean(), default=True)
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+
+    recipient = db.relationship('Identity',
+        backref=db.backref('notifications', lazy="dynamic"))
+    recipient_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+
+    def __repr__(self):
+        return "<Notification '{}'>".format(self.text)
+
+
+class MentionNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'mention_notification',
+    }
+
+    def __init__(self, mention, author, url):
+        super(MentionNotification, self).__init__()
+        self.text = "{} mentioned you in a Star".format(author.username),
+        self.url = url,
+        self.source = author.username,
+        self.recipient = mention.identity
+
+
+class ReplyNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'reply_notification'
+    }
+
+    def __init__(self, parent_star, author, url):
+        super(ReplyNotification, self).__init__()
+        self.text = "{} replied to your Star".format(author.username),
+        self.url = url,
+        self.source = author.username,
+        self.recipient = parent_star.author
 
 
 t_star_vesicles = db.Table(
