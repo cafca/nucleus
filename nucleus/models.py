@@ -857,6 +857,16 @@ class Notification(db.Model):
         return "<Notification '{}'>".format(self.text)
 
 
+class MentionNotification(Notification):
+    def __init__(self, mention, author, url):
+        super(MentionNotification, self).__init__()
+        self.text = "{} mentioned you in a Star".format(author.username),
+        self.url = url,
+        self.source = author.username,
+        self.domain = "mentions",
+        self.recipient = mention.identity
+
+
 t_star_vesicles = db.Table(
     'star_vesicles',
     db.Column('star_id', db.String(32), db.ForeignKey('star.id')),
