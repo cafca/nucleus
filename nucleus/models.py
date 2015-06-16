@@ -882,6 +882,19 @@ class MentionNotification(Notification):
         self.recipient = mention.identity
 
 
+class ReplyNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'reply_notification'
+    }
+
+    def __init__(self, parent_star, author, url):
+        super(ReplyNotification, self).__init__()
+        self.text = "{} replied to your Star".format(author.username),
+        self.url = url,
+        self.source = author.username,
+        self.recipient = parent_star.author
+
+
 t_star_vesicles = db.Table(
     'star_vesicles',
     db.Column('star_id', db.String(32), db.ForeignKey('star.id')),
