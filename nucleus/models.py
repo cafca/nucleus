@@ -823,6 +823,40 @@ class Persona(Identity):
         return rv
 
 
+class Notification(db.Model):
+    """Notification model
+
+    Attributes:
+        id: Integer identifier
+        text: The text displayed in the notifications
+        url: The URL clicking the notification will take the user
+        source: The source of the notification
+        domain: Domain of the notification, used for grouping
+        unread: Whether the notification has been read by the user
+        created: When the notifcation was generated
+        modfied: When some part of the notification was last changed
+        recipient: The Identity for whom this notifcation is intended
+    """
+
+    __tablename__ = "notification"
+
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text)
+    url = db.Column(db.Text)
+    source = db.Column(db.String(128))
+    domain = db.Column(db.String(128))
+    unread = db.Column(db.Boolean(), default=True)
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+
+    recipient = db.relationship('Identity',
+        backref=db.backref('notifications'))
+    recipient_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+
+    def __repr__(self):
+        return "<Notification '{}'>".format(self.text)
+
+
 t_star_vesicles = db.Table(
     'star_vesicles',
     db.Column('star_id', db.String(32), db.ForeignKey('star.id')),
