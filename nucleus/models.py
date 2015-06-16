@@ -840,6 +840,11 @@ class Notification(db.Model):
 
     __tablename__ = "notification"
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'notification',
+        'polymorphic_on': 'domain'
+    }
+
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.Text)
     url = db.Column(db.Text)
@@ -850,7 +855,7 @@ class Notification(db.Model):
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
 
     recipient = db.relationship('Identity',
-        backref=db.backref('notifications'))
+        backref=db.backref('notifications', lazy="dynamic"))
     recipient_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
 
     def __repr__(self):
@@ -858,12 +863,15 @@ class Notification(db.Model):
 
 
 class MentionNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'mention_notification',
+    }
+
     def __init__(self, mention, author, url):
         super(MentionNotification, self).__init__()
         self.text = "{} mentioned you in a Star".format(author.username),
         self.url = url,
         self.source = author.username,
-        self.domain = "mentions",
         self.recipient = mention.identity
 
 
