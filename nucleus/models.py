@@ -333,6 +333,13 @@ class Identity(Serializable, db.Model):
         else:
             return []
 
+    def notification_list(self, limit=5):
+        return self.notifications \
+            .filter_by(unread=True) \
+            .order_by(Notification.modified.desc()) \
+            .limit(limit) \
+            .all()
+
     def generate_keys(self, password):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
 
