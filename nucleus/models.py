@@ -1909,10 +1909,10 @@ class Oneup(Thought):
         logger.info("Updated {} from changeset".format(self))
 
 
-class Souma(Serializable, db.Model):
-    """A physical machine in the Souma network"""
+class Rktik(Serializable, db.Model):
+    """A physical machine in the Rktik network"""
 
-    __tablename__ = "souma"
+    __tablename__ = "rktik"
 
     _insert_required = ["id", "modified", "crypt_public", "sign_public", "mindset_id"]
     id = db.Column(db.String(32), primary_key=True)
@@ -1928,10 +1928,10 @@ class Souma(Serializable, db.Model):
     _version_string = db.Column(db.String(32), default="")
 
     def __str__(self):
-        return "<Souma [{}]>".format(self.id[:6])
+        return "<Rktik [{}]>".format(self.id[:6])
 
     def authorize(self, action, author_id=None):
-        """Return True if this Souma authorizes `action` for `author_id`
+        """Return True if this Rktik authorizes `action` for `author_id`
 
         Args:
             action (String): Action to be performed (see Synapse.CHANGE_TYPES)
@@ -1998,7 +1998,7 @@ class Souma(Serializable, db.Model):
 
     @property
     def version(self):
-        """Return semantic version object for this Souma"""
+        """Return semantic version object for this Rktik"""
         if not hasattr(self, "_version_string"):
             return None
         return semantic_version.Version(self._version_string)
