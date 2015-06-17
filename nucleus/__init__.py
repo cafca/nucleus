@@ -32,8 +32,8 @@ planet_sort_rank = {
     "LinkPlanet": 300
 }
 
-# Possible states of stars
-STAR_STATES = {
+# Possible states of thoughts
+THOUGHT_STATES = {
     -2: (-2, "deleted"),
     -1: (-1, "unavailable"),
     0: (0, "published"),
