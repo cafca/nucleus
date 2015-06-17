@@ -1311,8 +1311,8 @@ class PerceptAssociation(db.Model):
     thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
     percept_id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     percept = db.relationship("Percept", backref="thought_assocs")
-    author_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-    author = db.relationship("Persona", backref="percept_assocs")
+    author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+    author = db.relationship("Identity", backref="percept_assocs")
 
     @classmethod
     def validate_changeset(cls, changeset):
