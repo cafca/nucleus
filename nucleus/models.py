@@ -12,9 +12,9 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from uuid import uuid4
 
-from . import ONEUP_STATES, THOUGHT_STATES, PLANET_STATES, ATTACHMENT_KINDS, \
+from . import ONEUP_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger, planet_sort_rank
+    CHANGE_TYPES, logger, percept_sort_rank
 from .helpers import epoch_seconds
 
 from database import cache, db
@@ -908,7 +908,7 @@ class Thought(Serializable, db.Model):
     __tablename__ = "thought"
 
     _insert_required = ["id", "text", "created", "modified", "author_id",
-        "planet_assocs", "parent_id", "mindset_id"]
+        "percept_assocs", "parent_id", "mindset_id"]
     _update_required = ["id", "text", "modified"]
 
     id = db.Column(db.String(32), primary_key=True)
@@ -925,7 +925,7 @@ class Thought(Serializable, db.Model):
         primaryjoin="identity.c.id==thought.c.author_id")
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
 
-    planet_assocs = db.relationship("PlanetAssociation",
+    percept_assocs = db.relationship("PerceptAssociation",
         backref="thought",
         lazy="dynamic")
 
@@ -974,9 +974,9 @@ class Thought(Serializable, db.Model):
 
     @property
     def attachments(self):
-        return self.planet_assocs \
-            .join(Planet) \
-            .filter(Planet.kind.in_(ATTACHMENT_KINDS))
+        return self.percept_assocs \
+            .join(Percept) \
+            .filter(Percept.kind.in_(ATTACHMENT_KINDS))
 
     @property
     def comments(self):
@@ -1006,16 +1006,16 @@ class Thought(Serializable, db.Model):
             modified=thought_modified,
             mindset=mindset)
 
-        for pa in thought.planet_assocs:
-            assoc = PlanetAssociation(
-                thought=new_thought, planet=pa.planet, author=author)
-            new_thought.planet_assocs.append(assoc)
+        for pa in thought.percept_assocs:
+            assoc = PerceptAssociation(
+                thought=new_thought, percept=pa.percept, author=author)
+            new_thought.percept_assocs.append(assoc)
 
         return new_thought
 
     @property
     def tags(self):
-        return self.planet_assocs.join(Planet).filter(Planet.kind == "tag")
+        return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1047,34 +1047,34 @@ class Thought(Serializable, db.Model):
         else:
             thought.author = author
 
-        # Append planets to new Thought
-        for planet_assoc in changeset["planet_assocs"]:
-            if not PlanetAssociation.validate_changeset(planet_assoc):
-                logger.warning("Invalid changeset for planet associated with {}\n\n{}".format(thought, changeset))
+        # Append percepts to new Thought
+        for percept_assoc in changeset["percept_assocs"]:
+            if not PerceptAssociation.validate_changeset(percept_assoc):
+                logger.warning("Invalid changeset for percept associated with {}\n\n{}".format(thought, changeset))
             else:
-                author = Persona.request_persona(planet_assoc["author_id"])
-                pid = planet_assoc["planet"]["id"]
+                author = Persona.request_persona(percept_assoc["author_id"])
+                pid = percept_assoc["percept"]["id"]
 
-                # TODO: Better lookup method for planet classes
-                if planet_assoc["planet"]["kind"] == "link":
-                    planet_cls = LinkPlanet
-                elif planet_assoc["planet"]["kind"] == "linkedpicture":
-                    planet_cls = LinkedPicturePlanet
-                elif planet_assoc["planet"]["kind"] == "text":
-                    planet_cls = TextPlanet
+                # TODO: Better lookup method for percept classes
+                if percept_assoc["percept"]["kind"] == "link":
+                    percept_cls = LinkPercept
+                elif percept_assoc["percept"]["kind"] == "linkedpicture":
+                    percept_cls = LinkedPicturePercept
+                elif percept_assoc["percept"]["kind"] == "text":
+                    percept_cls = TextPercept
                 else:
-                    raise NotImplementedError("Planet class {} is not implemented yet".format(
-                        planet_assoc["planet"]["kind"]))
+                    raise NotImplementedError("Percept class {} is not implemented yet".format(
+                        percept_assoc["percept"]["kind"]))
 
-                planet = planet_cls.query.get(pid)
-                if planet is None:
-                    planet = planet_cls.create_from_changeset(planet_assoc["planet"])
+                percept = percept_cls.query.get(pid)
+                if percept is None:
+                    percept = percept_cls.create_from_changeset(percept_assoc["percept"])
                 else:
-                    planet.update_from_changeset(planet_assoc["planet"])
+                    percept.update_from_changeset(percept_assoc["percept"])
 
-                assoc = PlanetAssociation(author=author, planet=planet)
-                thought.planet_assocs.append(assoc)
-                logger.info("Added {} to new {}".format(planet, thought))
+                assoc = PerceptAssociation(author=author, percept=percept)
+                thought.percept_assocs.append(assoc)
+                logger.info("Added {} to new {}".format(percept, thought))
 
         logger.info("Created {} from changeset".format(thought))
 
@@ -1102,38 +1102,38 @@ class Thought(Serializable, db.Model):
         # Update text
         self.text = changeset["text"]
 
-        for planet_assoc in changeset["planet_assocs"]:
-            if not PlanetAssociation.validate_changeset(planet_assoc):
-                logger.warning("Invalid changeset for planet associated with {}\n{}".format(self, changeset))
+        for percept_assoc in changeset["percept_assocs"]:
+            if not PerceptAssociation.validate_changeset(percept_assoc):
+                logger.warning("Invalid changeset for percept associated with {}\n{}".format(self, changeset))
             else:
-                author = Persona.request_persona(planet_assoc["author_id"])
-                pid = planet_assoc["planet"]["id"]
+                author = Persona.request_persona(percept_assoc["author_id"])
+                pid = percept_assoc["percept"]["id"]
 
-                assoc = PlanetAssociation.filter_by(thought_id=self.id).filter_by(planet_id=pid).first()
+                assoc = PerceptAssociation.filter_by(thought_id=self.id).filter_by(percept_id=pid).first()
                 if assoc is None:
-                    planet = Planet.query.get(pid)
-                    if planet is None:
-                        planet = Planet.create_from_changeset(planet_assoc["planet"])
+                    percept = Percept.query.get(pid)
+                    if percept is None:
+                        percept = Percept.create_from_changeset(percept_assoc["percept"])
                     else:
-                        planet.update_from_changeset(planet_assoc["planet"])
+                        percept.update_from_changeset(percept_assoc["percept"])
 
-                    assoc = PlanetAssociation(author=author, planet=planet)
-                    self.planet_assocs.append(assoc)
-                    logger.info("Added {} to {}".format(planet, self))
+                    assoc = PerceptAssociation(author=author, percept=percept)
+                    self.percept_assocs.append(assoc)
+                    logger.info("Added {} to {}".format(percept, self))
 
         logger.info("Updated {} from changeset".format(self))
 
     def export(self, exclude=[], include=None, update=False):
         """See Serializable.export"""
 
-        ex = set(exclude + ["planets", ])
+        ex = set(exclude + ["percepts", ])
         data = Serializable.export(self, exclude=ex, include=include, update=update)
 
-        data["planet_assocs"] = list()
-        for planet_assoc in self.planet_assocs:
-            data["planet_assocs"].append({
-                "planet": planet_assoc.planet.export(),
-                "author_id": planet_assoc.author_id
+        data["percept_assocs"] = list()
+        for percept_assoc in self.percept_assocs:
+            data["percept_assocs"].append({
+                "percept": percept_assoc.percept.export(),
+                "author_id": percept_assoc.author_id
             })
 
         return data
@@ -1264,92 +1264,92 @@ class Thought(Serializable, db.Model):
         return oneup
 
     def link_url(self):
-        """Return URL if this Thought has a Link-Planet
+        """Return URL if this Thought has a Link-Percept
 
         Returns:
             String: URL of the first associated Link
             Bool: False if no link was found
         """
-        # planet_assoc = self.planet_assocs.join(PlanetAssociation.planet.of_type(LinkPlanet)).first()
+        # percept_assoc = self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkPercept)).first()
 
-        for planet_assoc in self.planet_assocs:
-            if planet_assoc.planet.kind == "link":
-                return planet_assoc.planet.url
+        for percept_assoc in self.percept_assocs:
+            if percept_assoc.percept.kind == "link":
+                return percept_assoc.percept.url
         return None
 
     def has_picture(self):
-        """Return True if this Thought has a PicturePlanet"""
+        """Return True if this Thought has a PicturePercept"""
         try:
-            first = self.picture_planets()[0]
+            first = self.picture_percepts()[0]
         except IndexError:
             first = None
 
         return first is not None
 
     def has_text(self):
-        """Return True if this Thought has a TextPlanet"""
+        """Return True if this Thought has a TextPercept"""
         try:
-            first = self.text_planets()[0]
+            first = self.text_percepts()[0]
         except IndexError:
             first = None
 
         return first is not None
 
-    def picture_planets(self):
+    def picture_percepts(self):
         """Return pictures of this Thought"""
-        return self.planet_assocs.join(PlanetAssociation.planet.of_type(LinkedPicturePlanet)).all()
+        return self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkedPicturePercept)).all()
 
-    def text_planets(self):
-        """Return TextPlanets of this Thought"""
-        return self.planet_assocs.join(PlanetAssociation.planet.of_type(TextPlanet)).all()
+    def text_percepts(self):
+        """Return TextPercepts of this Thought"""
+        return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
 
 
-class PlanetAssociation(db.Model):
-    """Associates Planets with Thoughts, defining an author for the connection"""
+class PerceptAssociation(db.Model):
+    """Associates Percepts with Thoughts, defining an author for the connection"""
 
-    __tablename__ = 'planet_association'
+    __tablename__ = 'percept_association'
     thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
-    planet_id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
-    planet = db.relationship("Planet", backref="thought_assocs")
+    percept_id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+    percept = db.relationship("Percept", backref="thought_assocs")
     author_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-    author = db.relationship("Persona", backref="planet_assocs")
+    author = db.relationship("Persona", backref="percept_assocs")
 
     @classmethod
     def validate_changeset(cls, changeset):
-        """Return True if `changeset` is a valid PlanetAssociation changeset"""
+        """Return True if `changeset` is a valid PerceptAssociation changeset"""
 
         if "author_id" not in changeset or changeset["author_id"] is None:
             logger.warning("Missing `author_id` in changeset")
             return False
 
-        if "planet" not in changeset or changeset["planet"] is None or "kind" not in changeset["planet"]:
-            logger.warning("Missing `planet` or `planet.kind` in changeset")
+        if "percept" not in changeset or changeset["percept"] is None or "kind" not in changeset["percept"]:
+            logger.warning("Missing `percept` or `percept.kind` in changeset")
             return False
 
-        p_cls = LinkPlanet if changeset["planet"]["kind"] == "link" else LinkedPicturePlanet
+        p_cls = LinkPercept if changeset["percept"]["kind"] == "link" else LinkedPicturePercept
         return p_cls.validate_changeset(changeset)
 
     @property
     def sort_rank(self):
-        """Return sort rank of this planet type
+        """Return sort rank of this percept type
 
         Returns:
             Depending on self.__class__ an Integer > 0 is returned
         """
-        return planet_sort_rank.get(self.planet.kind, 1000)
+        return percept_sort_rank.get(self.percept.kind, 1000)
 
 
-t_planet_vesicles = db.Table(
-    'planet_vesicles',
-    db.Column('planet_id', db.String(32), db.ForeignKey('planet.id')),
+t_percept_vesicles = db.Table(
+    'percept_vesicles',
+    db.Column('percept_id', db.String(32), db.ForeignKey('percept.id')),
     db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Planet(Serializable, db.Model):
-    """A Planet represents an attachment"""
+class Percept(Serializable, db.Model):
+    """A Percept represents an attachment"""
 
-    __tablename__ = 'planet'
+    __tablename__ = 'percept'
 
     _insert_required = ["id", "title", "created", "modified", "source", "kind"]
     _update_required = ["id", "title", "modified", "source"]
@@ -1364,21 +1364,21 @@ class Planet(Serializable, db.Model):
 
     vesicles = db.relationship(
         'Vesicle',
-        secondary='planet_vesicles',
-        primaryjoin='planet_vesicles.c.planet_id==planet.c.id',
-        secondaryjoin='planet_vesicles.c.vesicle_id==vesicle.c.id')
+        secondary='percept_vesicles',
+        primaryjoin='percept_vesicles.c.percept_id==percept.c.id',
+        secondaryjoin='percept_vesicles.c.vesicle_id==vesicle.c.id')
 
     __mapper_args__ = {
-        'polymorphic_identity': 'planet',
+        'polymorphic_identity': 'percept',
         'polymorphic_on': kind
     }
 
     def __repr__(self):
-        return "<Planet:{} [{}]>".format(self.kind, self.id[:6])
+        return "<Percept:{} [{}]>".format(self.kind, self.id[:6])
 
     def get_state(self):
         """
-        Return publishing state of this planet.
+        Return publishing state of this percept.
 
         Returns:
             Integer:
@@ -1389,43 +1389,43 @@ class Planet(Serializable, db.Model):
                 2 -- private
                 3 -- updating
         """
-        return PLANET_STATES[self.state][0]
+        return PERCEPT_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this planet
+        Set the publishing state of this percept
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.PLANET_STATES
+            new_state (int) code of the new state as defined in nucleus.PERCEPT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in PLANET_STATES.keys():
-            raise ValueError("{} ({}) is not a valid planet state").format(
+        if new_state not in PERCEPT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid percept state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         if stub is not None:
-            if not isinstance(stub, Planet):
+            if not isinstance(stub, Percept):
                 raise ValueError("Invalid stub of type {}".format(type(stub)))
 
-            new_planet = stub
-            new_planet.id = changeset["id"]
-            new_planet.title = changeset["title"]
-            new_planet.source = changeset["source"]
-            new_planet.created = created_dt
-            new_planet.modified = modified_dt
+            new_percept = stub
+            new_percept.id = changeset["id"]
+            new_percept.title = changeset["title"]
+            new_percept.source = changeset["source"]
+            new_percept.created = created_dt
+            new_percept.modified = modified_dt
         else:
-            new_planet = Planet(
+            new_percept = Percept(
                 id=changeset["id"],
                 title=changeset["title"],
                 created=created_dt,
@@ -1433,11 +1433,11 @@ class Planet(Serializable, db.Model):
                 source=changeset["source"]
             )
 
-        logger.info("Created new {} from changeset".format(new_planet))
-        return new_planet
+        logger.info("Created new {} from changeset".format(new_percept))
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         self.title = changeset["title"]
@@ -1460,7 +1460,7 @@ class Tag(Serializable, db.Model):
 
         inst = cls.query.filter_by(name=name).first()
         if inst is None:
-            inst = cls.query.join(TagPlanet).filter(TagPlanet.title == name).first()
+            inst = cls.query.join(TagPercept).filter(TagPercept.title == name).first()
             if inst is None:
                 inst = cls(name=name, *args, **kwargs)
                 inst.id = uuid4().hex
@@ -1468,18 +1468,18 @@ class Tag(Serializable, db.Model):
         return inst
 
 
-class TagPlanet(Planet):
+class TagPercept(Percept):
     """A Tag"""
 
     _insert_required = ["id", "title", "created", "modified", "kind", "tag"]
     _update_required = ["id", "modified"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     tag_id = db.Column(db.String(32), db.ForeignKey('tag.id'))
     tag = db.relationship('Tag', backref="synonyms")
 
     def __init__(self, *args, **kwargs):
-        Planet.__init__(self, *args, **kwargs)
+        Percept.__init__(self, *args, **kwargs)
         self.id = uuid4().hex
         self.tag = Tag.get_or_create(kwargs["title"])
 
@@ -1488,15 +1488,15 @@ class TagPlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
-        stub = TagPlanet()
-        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+        stub = TagPercept()
+        new_percept = Percept.create_from_changeset(changeset, stub=stub,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.tag = Tag.get_or_create(changeset["tag"])
-        return new_planet
+        new_percept.tag = Tag.get_or_create(changeset["tag"])
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+        Percept.update_from_changeset(self, changeset, update_sender, update_recipient)
 
         if "tag" in changeset:
             self.tag = Tag.get_or_create(changeset["tag"])
@@ -1507,20 +1507,20 @@ class TagPlanet(Planet):
     }
 
 
-class Mention(Planet):
+class Mention(Percept):
     """Mention an Identity to notify them"""
 
     _insert_required = ["id", "created", "modified", "kind", "identity_id",
         "text"]
     _update_required = ["id", "modified"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     identity_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
     identity = db.relationship('Identity', backref="mentions")
     text = db.Column(db.String(80))
 
     def __init__(self, *args, **kwargs):
-        Planet.__init__(self, *args, **kwargs)
+        Percept.__init__(self, *args, **kwargs)
         self.id = uuid4().hex
 
         for k in ["identity", "text"]:
@@ -1535,21 +1535,21 @@ class Mention(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
-        stub = TagPlanet()
-        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+        stub = TagPercept()
+        new_percept = Percept.create_from_changeset(changeset, stub=stub,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.identity = Identity.get(changeset["identity_id"])
-        if new_planet.identity is None:
+        new_percept.identity = Identity.get(changeset["identity_id"])
+        if new_percept.identity is None:
             raise PersonaNotFoundError("Mention links Identity {}".format(
                 changeset["identity_id"]))
 
-        new_planet.text = changeset["text"]
+        new_percept.text = changeset["text"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+        Percept.update_from_changeset(self, changeset, update_sender, update_recipient)
 
         if "identity_id" in changeset:
             self.identity = Identity.get(changeset["identity_id"])
@@ -1567,13 +1567,13 @@ class Mention(Planet):
     }
 
 
-class PicturePlanet(Planet):
+class PicturePercept(Percept):
     """A Picture attachment"""
 
     _insert_required = ["id", "title", "created", "modified", "source", "filename", "kind"]
     _update_required = ["id", "title", "modified", "source", "filename"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     filename = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1582,28 +1582,28 @@ class PicturePlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
-        stub = PicturePlanet()
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
+        stub = PicturePercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.filename = changeset["filename"]
+        new_percept.filename = changeset["filename"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class LinkedPicturePlanet(Planet):
+class LinkedPicturePercept(Percept):
     """A linked picture attachment"""
 
     _insert_required = ["id", "title", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     url = db.Column(db.Text)
     # width = db.Column(db.Integer, default=0)
     # height = db.Column(db.Integer, default=0)
@@ -1614,29 +1614,29 @@ class LinkedPicturePlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = LinkedPicturePlanet()
+            stub = LinkedPicturePercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.url = changeset["url"]
+        new_percept.url = changeset["url"]
 
         # if "width" in changeset:
-        #     new_planet.width = int(changeset["width"])
+        #     new_percept.width = int(changeset["width"])
 
         # if "height" in changeset:
-        #     new_planet.height = int(changeset["height"])
+        #     new_percept.height = int(changeset["height"])
 
-        return new_planet
+        return new_percept
 
     @classmethod
     def get_or_create(cls, url, *args, **kwargs):
         """Get or create an instance from a URL
 
         Args:
-            url (String): URL of the Planet to retrieve
+            url (String): URL of the Percept to retrieve
             args, kwargs: get passed on to cls.__init__ if a new instance is created
 
         Raises:
@@ -1654,17 +1654,17 @@ class LinkedPicturePlanet(Planet):
         return inst
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class LinkPlanet(Planet):
+class LinkPercept(Percept):
     """A URL attachment"""
 
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     url = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1676,7 +1676,7 @@ class LinkPlanet(Planet):
         """Get or create an instance from a URL
 
         Args:
-            url (String): URL of the Planet to retrieve
+            url (String): URL of the Percept to retrieve
             title (String): Optional title. Is only set when no existing
                 instance is found
 
@@ -1696,16 +1696,16 @@ class LinkPlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = LinkPlanet()
+            stub = LinkPercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.url = changeset["url"]
+        new_percept.url = changeset["url"]
 
-        return new_planet
+        return new_percept
 
     def iframe_url(self):
         """Return a URL to embed within an iframe if this link's domain provides such
@@ -1729,7 +1729,7 @@ class LinkPlanet(Planet):
         return rv
 
     def favicon_url(self):
-        """Return the URL of this Planet's domain favicon
+        """Return the URL of this Percept's domain favicon
 
         Returns:
             string: URL of the favicon as a 32 pixel image"""
@@ -1747,17 +1747,17 @@ class LinkPlanet(Planet):
             return "http://grabicon.com/icon?domain={}".format(domain)
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class TextPlanet(Planet):
+class TextPercept(Percept):
     """A longform text attachment"""
 
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "text", "kind"]
     _update_required = ["id", "title", "modified", "source", "text"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     text = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1766,39 +1766,39 @@ class TextPlanet(Planet):
 
     @classmethod
     def get_or_create(cls, text, source=None):
-        """Return planet containing text if it already exists or create it
+        """Return percept containing text if it already exists or create it
 
         Args:
-            text (String): Content value of the TextPlanet
+            text (String): Content value of the TextPercept
             source (String): Source description, max 128 chars
         """
         h = sha256(text.encode('utf-8')).hexdigest()[:32]
-        planet = TextPlanet.query.get(h)
+        percept = TextPercept.query.get(h)
 
-        if planet is None:
+        if percept is None:
             logger.info("Storing new text")
-            planet = TextPlanet(
+            percept = TextPercept(
                 id=h,
                 text=text,
                 source=source)
 
-        return planet
+        return percept
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = TextPlanet()
+            stub = TextPercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.text = changeset["text"]
+        new_percept.text = changeset["text"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
     def reading_time(self):
@@ -2473,7 +2473,7 @@ class Movement(Identity):
 
     def get_state(self):
         """
-        Return publishing state of this Movement. (temporarily uses planet states)
+        Return publishing state of this Movement. (temporarily uses percept states)
 
         Returns:
             Integer:
@@ -2484,7 +2484,7 @@ class Movement(Identity):
                 2 -- private
                 3 -- updating
         """
-        return PLANET_STATES[self.state][0]
+        return PERCEPT_STATES[self.state][0]
 
     @property
     def member_count(self):
@@ -2506,17 +2506,17 @@ class Movement(Identity):
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this Movement (temporarily uses planet states)
+        Set the publishing state of this Movement (temporarily uses percept states)
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.PLANET_STATES
+            new_state (int) code of the new state as defined in nucleus.PERCEPT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in PLANET_STATES.keys():
-            raise ValueError("{} ({}) is not a valid planet state").format(
+        if new_state not in PERCEPT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid percept state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
