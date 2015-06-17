@@ -2150,7 +2150,7 @@ class Mindset(Serializable, db.Model):
         """Return URL for this Mindset depending on kind"""
         rv = None
 
-        if self.kind.thoughttswith("movement"):
+        if self.kind.startswith("movement"):
             if self.kind == "movement_blog":
                 m = Movement.query.filter(Movement.blog_id == self.id).first()
                 rv = url_for("web.movement_blog", id=m.id)
@@ -2158,7 +2158,7 @@ class Mindset(Serializable, db.Model):
                 m = Movement.query.filter(Movement.mindspace_id == self.id).first()
                 rv = url_for("web.movement_mindspace", id=m.id)
 
-        elif self.kind.thoughttswith("persona"):
+        elif self.kind.startswith("persona"):
             if self.kind == "persona_blog":
                 p = Persona.query.filter(Persona.blog_id == self.id).first()
                 rv = url_for("web.persona", id=p.id)
