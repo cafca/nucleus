@@ -50,7 +50,7 @@ PERCEPT_STATES = {
     2: (2, "updating")
 }
 
-# Possible states of 1ups
+# Possible states of Upvotes
 UPVOTE_STATES = {
     -1: "disabled",
     0: "active",

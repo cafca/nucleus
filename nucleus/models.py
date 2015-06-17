@@ -1188,9 +1188,9 @@ class Thought(Serializable, db.Model):
         """Returns a query for all upvotes, including disabled ones"""
         return self.children.filter_by(kind="upvote")
 
-    def upvoteped(self):
+    def upvoted(self):
         """
-        Return True if active Persona has 1upped this Thought
+        Return True if active Persona has Upvoted this Thought
         """
 
         upvote = self.upvotes.filter_by(author=current_user.active_persona).first()
@@ -1221,16 +1221,16 @@ class Thought(Serializable, db.Model):
 
     def toggle_upvote(self, author_id=None):
         """
-        Toggle 1up for this Thought on/off
+        Toggle Upvote for this Thought on/off
 
         Args:
-            author_id (String): Optional Persona ID that issued the 1up. Defaults to active Persona.
+            author_id (String): Optional Persona ID that issued the Upvote. Defaults to active Persona.
 
         Returns:
             Upvote: The toggled upvote object
 
         Raises:
-            PersonaNotFoundError: 1up author not found
+            PersonaNotFoundError: Upvote author not found
             UnauthorizedError: Author is a foreign Persona
         """
 
@@ -1240,12 +1240,12 @@ class Thought(Serializable, db.Model):
             author = Persona.query.get(author_id)
 
         if author is None:
-            raise PersonaNotFoundError("1up author not found")
+            raise PersonaNotFoundError("Upvote author not found")
 
         if not author.controlled():
-            raise UnauthorizedError("Can't toggle 1ups with foreign Persona {}".format(author))
+            raise UnauthorizedError("Can't toggle Upvotes with foreign Persona {}".format(author))
 
-        # Check whether 1up has been previously issued
+        # Check whether Upvote has been previously issued
         upvote = self.upvotes.filter_by(author=author).first()
         if upvote is not None:
             old_state = upvote.get_state()
@@ -1255,7 +1255,7 @@ class Thought(Serializable, db.Model):
             upvote = Upvote(id=uuid4().hex, author=author, parent=self)
             self.children.append(upvote)
 
-        # Commit 1up
+        # Commit Upvote
         db.session.add(self)
         db.session.commit()
         cache.delete_memoized(self.upvote_count)
@@ -1812,7 +1812,7 @@ class TextPercept(Percept):
 
 
 class Upvote(Thought):
-    """A 1up is a vote that signals interest in its parent Thought"""
+    """A Upvote is a vote that signals interest in its parent Thought"""
 
     _insert_required = ["id", "created", "modified", "author_id", "parent_id", "state"]
     _update_required = ["id", "modified", "state"]
@@ -1823,14 +1823,14 @@ class Upvote(Thought):
 
     def __repr__(self):
         if ["author_id", "parent_id"] in dir(self):
-            return "<1up <Persona {}> -> <Thought {}> ({})>".format(
+            return "<Upvote <Persona {}> -> <Thought {}> ({})>".format(
                 self.author_id[:6], self.parent_id[:6], self.get_state())
         else:
-            return "<1up ({})>".format(self.get_state())
+            return "<Upvote ({})>".format(self.get_state())
 
     def get_state(self):
         """
-        Return publishing state of this 1up.
+        Return publishing state of this Upvote.
 
         Returns:
             Integer:
@@ -1842,7 +1842,7 @@ class Upvote(Thought):
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this 1up
+        Set the publishing state of this Upvote
 
         Parameters:
             new_state (int) code of the new state as defined in nucleus.UPVOTE_STATES
@@ -1852,7 +1852,7 @@ class Upvote(Thought):
         """
         new_state = int(new_state)
         if new_state not in UPVOTE_STATES.keys():
-            raise ValueError("{} ({}) is not a valid 1up state".format(
+            raise ValueError("{} ({}) is not a valid Upvote state".format(
                 new_state, type(new_state)))
         else:
             self.state = new_state
