@@ -25,15 +25,15 @@ logger = logging.getLogger('nucleus')
 source_format = lambda address: None if address is None else \
     "{host}:{port}".format(host=address[0], port=address[1])
 
-planet_sort_rank = {
-    "PicturePlanet": 100,
-    "LinkedPicturePlanet": 200,
-    "TextPlanet": 400,
-    "LinkPlanet": 300
+percept_sort_rank = {
+    "PicturePercept": 100,
+    "LinkedPicturePercept": 200,
+    "TextPercept": 400,
+    "LinkPercept": 300
 }
 
-# Possible states of stars
-STAR_STATES = {
+# Possible states of thoughts
+THOUGHT_STATES = {
     -2: (-2, "deleted"),
     -1: (-1, "unavailable"),
     0: (0, "published"),
@@ -42,16 +42,16 @@ STAR_STATES = {
     3: (3, "updating")
 }
 
-# Possible states of planets
-PLANET_STATES = {
+# Possible states of percepts
+PERCEPT_STATES = {
     -1: (-1, "unavailable"),
     0: (0, "published"),
     1: (1, "private"),
     2: (2, "updating")
 }
 
-# Possible states of 1ups
-ONEUP_STATES = {
+# Possible states of Upvotes
+UPVOTE_STATES = {
     -1: "disabled",
     0: "active",
     1: "unknown author"

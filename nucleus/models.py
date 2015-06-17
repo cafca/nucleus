@@ -12,9 +12,9 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from uuid import uuid4
 
-from . import ONEUP_STATES, STAR_STATES, PLANET_STATES, ATTACHMENT_KINDS, \
+from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger, planet_sort_rank
+    CHANGE_TYPES, logger, percept_sort_rank
 from .helpers import epoch_seconds
 
 from database import cache, db
@@ -249,7 +249,7 @@ class Identity(Serializable, db.Model):
         sign_public: Public signing RSA key, JSON encoded KeyCzar export
         modified: Last time this Identity object was modified, defaults to now
         vesicles: List of Vesicles that describe this Identity object
-        blog: Starmap containing this Identity's blog
+        blog: Mindset containing this Identity's blog
 
     """
 
@@ -276,11 +276,11 @@ class Identity(Serializable, db.Model):
         primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
         secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
-    blog_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    blog = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.blog_id')
+    blog_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+    blog = db.relationship('Mindset', primaryjoin='mindset.c.id==identity.c.blog_id')
 
-    mindspace_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    mindspace = db.relationship('Starmap', primaryjoin='starmap.c.id==identity.c.mindspace_id')
+    mindspace_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+    mindspace = db.relationship('Mindset', primaryjoin='mindset.c.id==identity.c.mindspace_id')
 
     __mapper_args__ = {
         'polymorphic_identity': 'identity',
@@ -412,10 +412,10 @@ class Identity(Serializable, db.Model):
             )
 
         # Update blog
-        blog = Starmap.query.get(changeset["blog_id"])
+        blog = Mindset.query.get(changeset["blog_id"])
         if blog is None or blog.get_state() == -1:
             request_list.append({
-                "type": "Starmap",
+                "type": "Mindset",
                 "id": changeset["blog_id"],
                 "author_id": update_recipient.id if update_recipient else None,
                 "recipient_id": update_sender.id if update_sender else None,
@@ -423,7 +423,7 @@ class Identity(Serializable, db.Model):
             })
 
         if blog is None:
-            blog = Starmap(id=changeset["blog_id"])
+            blog = Mindset(id=changeset["blog_id"])
             blog.state = -1
 
         ident.blog = blog
@@ -454,18 +454,18 @@ class Identity(Serializable, db.Model):
 
         # Update blog
         if "blog_id" in changeset:
-            blog = Starmap.query.get(changeset["blog_id"])
+            blog = Mindset.query.get(changeset["blog_id"])
             if blog is None or blog.get_state() == -1:
                 request_list.append({
-                    "type": "Starmap",
+                    "type": "Mindset",
                     "id": changeset["blog_id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
-                logger.info("Requested {}'s {}".format(self.username, "blog starmap"))
+                logger.info("Requested {}'s {}".format(self.username, "blog mindset"))
             else:
                 self.blog = blog
-                logger.info("Updated {}'s {}".format(self.username, "blog starmap"))
+                logger.info("Updated {}'s {}".format(self.username, "blog mindset"))
 
         logger.info("Updated {} identity from changeset. Requesting {} objects.".format(self, len(request_list)))
 
@@ -494,7 +494,7 @@ class Persona(Identity):
     Attributes:
         email: An email address, max 120 bytes
         contacts: List of this Persona's contacts
-        index: Starmap containing all Star's this Persona publishes to its contacts
+        index: Mindset containing all Thought's this Persona publishes to its contacts
         myelin_offset: Datetime of last request for Vesicles sent to this Persona
 
     """
@@ -523,8 +523,8 @@ class Persona(Identity):
         primaryjoin='movements_followed.c.persona_id==persona.c.id',
         secondaryjoin='movements_followed.c.movement_id==movement.c.id')
 
-    index_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    index = db.relationship('Starmap', primaryjoin='starmap.c.id==persona.c.index_id')
+    index_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+    index = db.relationship('Mindset', primaryjoin='mindset.c.id==persona.c.index_id')
 
     # Myelin offset stores the date at which the last Vesicle receieved from Myelin was created
     myelin_offset = db.Column(db.DateTime)
@@ -616,17 +616,17 @@ class Persona(Identity):
         p.email = changeset["email"]
 
         # Update index
-        index = Starmap.query.get(changeset["index_id"])
+        index = Mindset.query.get(changeset["index_id"])
         if index is None or index.get_state() == -1:
             request_list.append({
-                "type": "Starmap",
+                "type": "Mindset",
                 "id": changeset["index_id"],
                 "author_id": update_recipient.id,
                 "recipient_id": update_sender.id,
             })
 
         if index is None:
-            index = Starmap(id=changeset["index_id"])
+            index = Mindset(id=changeset["index_id"])
             index.state = -1
 
         p.index = index
@@ -681,18 +681,18 @@ class Persona(Identity):
 
         # Update index
         if "index_id" in changeset:
-            index = Starmap.query.get(changeset["index_id"])
+            index = Mindset.query.get(changeset["index_id"])
             if index is None or index.get_state() == -1:
                 request_list.append({
-                    "type": "Starmap",
+                    "type": "Mindset",
                     "id": changeset["index_id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
-                logger.info("Requested {}'s new {}".format(self.username, "index starmap"))
+                logger.info("Requested {}'s new {}".format(self.username, "index mindset"))
             else:
                 self.index = index
-                logger.info("Updated {}'s {}".format(self.username, "index starmap"))
+                logger.info("Updated {}'s {}".format(self.username, "index mindset"))
 
         # Update contacts
         if "contacts" in changeset:
@@ -876,7 +876,7 @@ class MentionNotification(Notification):
 
     def __init__(self, mention, author, url):
         super(MentionNotification, self).__init__()
-        self.text = "{} mentioned you in a Star".format(author.username),
+        self.text = "{} mentioned you in a Thought".format(author.username),
         self.url = url,
         self.source = author.username,
         self.recipient = mention.identity
@@ -887,28 +887,28 @@ class ReplyNotification(Notification):
         'polymorphic_identity': 'reply_notification'
     }
 
-    def __init__(self, parent_star, author, url):
+    def __init__(self, parent_thought, author, url):
         super(ReplyNotification, self).__init__()
-        self.text = "{} replied to your Star".format(author.username),
+        self.text = "{} replied to your Thought".format(author.username),
         self.url = url,
         self.source = author.username,
-        self.recipient = parent_star.author
+        self.recipient = parent_thought.author
 
 
-t_star_vesicles = db.Table(
-    'star_vesicles',
-    db.Column('star_id', db.String(32), db.ForeignKey('star.id')),
+t_thought_vesicles = db.Table(
+    'thought_vesicles',
+    db.Column('thought_id', db.String(32), db.ForeignKey('thought.id')),
     db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Star(Serializable, db.Model):
-    """A Star represents a post"""
+class Thought(Serializable, db.Model):
+    """A Thought represents a post"""
 
-    __tablename__ = "star"
+    __tablename__ = "thought"
 
     _insert_required = ["id", "text", "created", "modified", "author_id",
-        "planet_assocs", "parent_id", "starmap_id"]
+        "percept_assocs", "parent_id", "mindset_id"]
     _update_required = ["id", "text", "modified"]
 
     id = db.Column(db.String(32), primary_key=True)
@@ -921,45 +921,45 @@ class Star(Serializable, db.Model):
     state = db.Column(db.Integer, default=0)
 
     author = db.relationship('Identity',
-        backref=db.backref('stars'),
-        primaryjoin="identity.c.id==star.c.author_id")
+        backref=db.backref('thoughts'),
+        primaryjoin="identity.c.id==thought.c.author_id")
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
 
-    planet_assocs = db.relationship("PlanetAssociation",
-        backref="star",
+    percept_assocs = db.relationship("PerceptAssociation",
+        backref="thought",
         lazy="dynamic")
 
     vesicles = db.relationship('Vesicle',
-        secondary='star_vesicles',
-        primaryjoin='star_vesicles.c.star_id==star.c.id',
-        secondaryjoin='star_vesicles.c.vesicle_id==vesicle.c.id')
+        secondary='thought_vesicles',
+        primaryjoin='thought_vesicles.c.thought_id==thought.c.id',
+        secondaryjoin='thought_vesicles.c.vesicle_id==vesicle.c.id')
 
     context_length = db.Column(db.Integer, default=3)
 
-    parent = db.relationship('Star',
-        primaryjoin='and_(remote(Star.id)==Star.parent_id, Star.state>=0)',
+    parent = db.relationship('Thought',
+        primaryjoin='and_(remote(Thought.id)==Thought.parent_id, Thought.state>=0)',
         backref=db.backref('children', lazy="dynamic"),
-        remote_side='Star.id')
-    parent_id = db.Column(db.String(32), db.ForeignKey('star.id'))
+        remote_side='Thought.id')
+    parent_id = db.Column(db.String(32), db.ForeignKey('thought.id'))
 
-    starmap = db.relationship('Starmap',
-        primaryjoin='starmap.c.id==star.c.starmap_id',
+    mindset = db.relationship('Mindset',
+        primaryjoin='mindset.c.id==thought.c.mindset_id',
         backref=db.backref('index', lazy="dynamic"))
-    starmap_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
+    mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
 
     __mapper_args__ = {
-        'polymorphic_identity': 'star',
+        'polymorphic_identity': 'thought',
         'polymorphic_on': kind
     }
 
     def __repr__(self):
         text = self.text.encode('utf-8')
-        return "<Star {}: {}>".format(
+        return "<Thought {}: {}>".format(
             self.id[:6],
             (text[:24] if len(text) <= 24 else text[:22] + ".."))
 
     def authorize(self, action, author_id=None):
-        """Return True if this Star authorizes `action` for `author_id`
+        """Return True if this Thought authorizes `action` for `author_id`
 
         Args:
             action (String): Action to be performed (see Synapse.CHANGE_TYPES)
@@ -974,48 +974,48 @@ class Star(Serializable, db.Model):
 
     @property
     def attachments(self):
-        return self.planet_assocs \
-            .join(Planet) \
-            .filter(Planet.kind.in_(ATTACHMENT_KINDS))
+        return self.percept_assocs \
+            .join(Percept) \
+            .filter(Percept.kind.in_(ATTACHMENT_KINDS))
 
     @property
     def comments(self):
-        return self.children.filter_by(kind="star")
+        return self.children.filter_by(kind="thought")
 
     @classmethod
-    def clone(cls, star, author, starmap):
-        """Return a deep copy of the given Star
+    def clone(cls, thought, author, mindset):
+        """Return a deep copy of the given Thought
 
         Args:
-            star (Star): The Star object to be copied
-            author (Persona): Author of the new Star
-            starmap (Starmap): Where to put the new star
+            thought (Thought): The Thought object to be copied
+            author (Persona): Author of the new Thought
+            mindset (Mindset): Where to put the new thought
 
         Returns:
-            Star: The new copy
+            Thought: The new copy
         """
-        star_id = uuid4().hex
-        star_modified = datetime.datetime.utcnow()
+        thought_id = uuid4().hex
+        thought_modified = datetime.datetime.utcnow()
 
-        new_star = cls(
-            id=star_id,
-            text=star.text,
+        new_thought = cls(
+            id=thought_id,
+            text=thought.text,
             author=author,
-            parent=star,
-            created=star.created,
-            modified=star_modified,
-            starmap=starmap)
+            parent=thought,
+            created=thought.created,
+            modified=thought_modified,
+            mindset=mindset)
 
-        for pa in star.planet_assocs:
-            assoc = PlanetAssociation(
-                star=new_star, planet=pa.planet, author=author)
-            new_star.planet_assocs.append(assoc)
+        for pa in thought.percept_assocs:
+            assoc = PerceptAssociation(
+                thought=new_thought, percept=pa.percept, author=author)
+            new_thought.percept_assocs.append(assoc)
 
-        return new_star
+        return new_thought
 
     @property
     def tags(self):
-        return self.planet_assocs.join(Planet).filter(Planet.kind == "tag")
+        return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1024,77 +1024,77 @@ class Star(Serializable, db.Model):
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         if stub is not None:
-            star = stub
-            star.text = changeset["text"]
-            star.author = None
-            star.created = created_dt
-            star.modified = modified_dt
-            star.starmap_id = changeset["starmap_id"]
+            thought = stub
+            thought.text = changeset["text"]
+            thought.author = None
+            thought.created = created_dt
+            thought.modified = modified_dt
+            thought.mindset_id = changeset["mindset_id"]
         else:
-            star = Star(
+            thought = Thought(
                 id=changeset["id"],
                 text=changeset["text"],
                 author=None,
                 created=created_dt,
                 modified=modified_dt,
-                starmap_id=changeset["starmap_id"]
+                mindset_id=changeset["mindset_id"]
             )
 
         author = Persona.query.get(changeset["author_id"])
         if author is None:
             # TODO: Send request for author
-            star.author_id = changeset["author_id"]
+            thought.author_id = changeset["author_id"]
         else:
-            star.author = author
+            thought.author = author
 
-        # Append planets to new Star
-        for planet_assoc in changeset["planet_assocs"]:
-            if not PlanetAssociation.validate_changeset(planet_assoc):
-                logger.warning("Invalid changeset for planet associated with {}\n\n{}".format(star, changeset))
+        # Append percepts to new Thought
+        for percept_assoc in changeset["percept_assocs"]:
+            if not PerceptAssociation.validate_changeset(percept_assoc):
+                logger.warning("Invalid changeset for percept associated with {}\n\n{}".format(thought, changeset))
             else:
-                author = Persona.request_persona(planet_assoc["author_id"])
-                pid = planet_assoc["planet"]["id"]
+                author = Persona.request_persona(percept_assoc["author_id"])
+                pid = percept_assoc["percept"]["id"]
 
-                # TODO: Better lookup method for planet classes
-                if planet_assoc["planet"]["kind"] == "link":
-                    planet_cls = LinkPlanet
-                elif planet_assoc["planet"]["kind"] == "linkedpicture":
-                    planet_cls = LinkedPicturePlanet
-                elif planet_assoc["planet"]["kind"] == "text":
-                    planet_cls = TextPlanet
+                # TODO: Better lookup method for percept classes
+                if percept_assoc["percept"]["kind"] == "link":
+                    percept_cls = LinkPercept
+                elif percept_assoc["percept"]["kind"] == "linkedpicture":
+                    percept_cls = LinkedPicturePercept
+                elif percept_assoc["percept"]["kind"] == "text":
+                    percept_cls = TextPercept
                 else:
-                    raise NotImplementedError("Planet class {} is not implemented yet".format(
-                        planet_assoc["planet"]["kind"]))
+                    raise NotImplementedError("Percept class {} is not implemented yet".format(
+                        percept_assoc["percept"]["kind"]))
 
-                planet = planet_cls.query.get(pid)
-                if planet is None:
-                    planet = planet_cls.create_from_changeset(planet_assoc["planet"])
+                percept = percept_cls.query.get(pid)
+                if percept is None:
+                    percept = percept_cls.create_from_changeset(percept_assoc["percept"])
                 else:
-                    planet.update_from_changeset(planet_assoc["planet"])
+                    percept.update_from_changeset(percept_assoc["percept"])
 
-                assoc = PlanetAssociation(author=author, planet=planet)
-                star.planet_assocs.append(assoc)
-                logger.info("Added {} to new {}".format(planet, star))
+                assoc = PerceptAssociation(author=author, percept=percept)
+                thought.percept_assocs.append(assoc)
+                logger.info("Added {} to new {}".format(percept, thought))
 
-        logger.info("Created {} from changeset".format(star))
+        logger.info("Created {} from changeset".format(thought))
 
         if changeset["parent_id"] != "None":
-            parent = Star.query.get(changeset["parent_id"])
+            parent = Thought.query.get(changeset["parent_id"])
             if parent:
-                star.parent = parent
+                thought.parent = parent
             else:
-                logger.info("Requesting {}'s parent star".format(star))
-                request_objects.send(Star.create_from_changeset, message={
-                    "type": "Star",
+                logger.info("Requesting {}'s parent thought".format(thought))
+                request_objects.send(Thought.create_from_changeset, message={
+                    "type": "Thought",
                     "id": changeset["parent_id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
 
-        return star
+        return thought
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a Star from a changeset (See Serializable.update_from_changeset)"""
+        """Update a Thought from a changeset (See Serializable.update_from_changeset)"""
         # Update modified
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         self.modified = modified_dt
@@ -1102,45 +1102,45 @@ class Star(Serializable, db.Model):
         # Update text
         self.text = changeset["text"]
 
-        for planet_assoc in changeset["planet_assocs"]:
-            if not PlanetAssociation.validate_changeset(planet_assoc):
-                logger.warning("Invalid changeset for planet associated with {}\n{}".format(self, changeset))
+        for percept_assoc in changeset["percept_assocs"]:
+            if not PerceptAssociation.validate_changeset(percept_assoc):
+                logger.warning("Invalid changeset for percept associated with {}\n{}".format(self, changeset))
             else:
-                author = Persona.request_persona(planet_assoc["author_id"])
-                pid = planet_assoc["planet"]["id"]
+                author = Persona.request_persona(percept_assoc["author_id"])
+                pid = percept_assoc["percept"]["id"]
 
-                assoc = PlanetAssociation.filter_by(star_id=self.id).filter_by(planet_id=pid).first()
+                assoc = PerceptAssociation.filter_by(thought_id=self.id).filter_by(percept_id=pid).first()
                 if assoc is None:
-                    planet = Planet.query.get(pid)
-                    if planet is None:
-                        planet = Planet.create_from_changeset(planet_assoc["planet"])
+                    percept = Percept.query.get(pid)
+                    if percept is None:
+                        percept = Percept.create_from_changeset(percept_assoc["percept"])
                     else:
-                        planet.update_from_changeset(planet_assoc["planet"])
+                        percept.update_from_changeset(percept_assoc["percept"])
 
-                    assoc = PlanetAssociation(author=author, planet=planet)
-                    self.planet_assocs.append(assoc)
-                    logger.info("Added {} to {}".format(planet, self))
+                    assoc = PerceptAssociation(author=author, percept=percept)
+                    self.percept_assocs.append(assoc)
+                    logger.info("Added {} to {}".format(percept, self))
 
         logger.info("Updated {} from changeset".format(self))
 
     def export(self, exclude=[], include=None, update=False):
         """See Serializable.export"""
 
-        ex = set(exclude + ["planets", ])
+        ex = set(exclude + ["percepts", ])
         data = Serializable.export(self, exclude=ex, include=include, update=update)
 
-        data["planet_assocs"] = list()
-        for planet_assoc in self.planet_assocs:
-            data["planet_assocs"].append({
-                "planet": planet_assoc.planet.export(),
-                "author_id": planet_assoc.author_id
+        data["percept_assocs"] = list()
+        for percept_assoc in self.percept_assocs:
+            data["percept_assocs"].append({
+                "percept": percept_assoc.percept.export(),
+                "author_id": percept_assoc.author_id
             })
 
         return data
 
     def get_state(self):
         """
-        Return publishing state of this star.
+        Return publishing state of this thought.
 
         Returns:
             Integer:
@@ -1151,86 +1151,86 @@ class Star(Serializable, db.Model):
                 2 -- private
                 3 -- updating
         """
-        return STAR_STATES[self.state][0]
+        return THOUGHT_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this star
+        Set the publishing state of this thought
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.STAR_STATES
+            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in STAR_STATES.keys():
-            raise ValueError("{} ({}) is not a valid star state").format(
+        if new_state not in THOUGHT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid thought state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
 
-    def get_absolute_url(self, starmap_id):
-        return url_for('web.star', starmap_id=starmap_id, id=self.id)
+    def get_absolute_url(self, mindset_id):
+        return url_for('web.thought', mindset_id=mindset_id, id=self.id)
 
     def hot(self):
         """i reddit"""
         from math import log
         # Uncomment to assign a score with analytics.score
         # s = score(self)
-        s = self.oneup_count()
+        s = self.upvote_count()
         order = log(max(abs(s), 1), 10)
         sign = 1 if s > 0 else -1 if s < 0 else 0
         return round(order + sign * epoch_seconds(self.created) / 45000, 7)
 
     @property
-    def oneups(self):
-        """Returns a query for all oneups, including disabled ones"""
-        return self.children.filter_by(kind="oneup")
+    def upvotes(self):
+        """Returns a query for all upvotes, including disabled ones"""
+        return self.children.filter_by(kind="upvote")
 
-    def oneupped(self):
+    def upvoted(self):
         """
-        Return True if active Persona has 1upped this Star
+        Return True if active Persona has Upvoted this Thought
         """
 
-        oneup = self.oneups.filter_by(author=current_user.active_persona).first()
+        upvote = self.upvotes.filter_by(author=current_user.active_persona).first()
 
-        if oneup is None or oneup.state < 0:
+        if upvote is None or upvote.state < 0:
             return False
         else:
             return True
 
     @cache.memoize(timeout=10)
-    def oneup_count(self):
+    def upvote_count(self):
         """
-        Return the number of verified upvotes this Star has receieved
+        Return the number of verified upvotes this Thought has receieved
 
         Returns:
             Int: Number of upvotes
         """
-        return self.oneups.filter(Oneup.state >= 0).count()
+        return self.upvotes.filter(Upvote.state >= 0).count()
 
     def comment_count(self):
         """
-        Return the number of comemnts this Star has receieved
+        Return the number of comemnts this Thought has receieved
 
         Returns:
             Int: Number of comments
         """
         return self.comments.filter_by(state=0).count()
 
-    def toggle_oneup(self, author_id=None):
+    def toggle_upvote(self, author_id=None):
         """
-        Toggle 1up for this Star on/off
+        Toggle Upvote for this Thought on/off
 
         Args:
-            author_id (String): Optional Persona ID that issued the 1up. Defaults to active Persona.
+            author_id (String): Optional Persona ID that issued the Upvote. Defaults to active Persona.
 
         Returns:
-            Oneup: The toggled oneup object
+            Upvote: The toggled upvote object
 
         Raises:
-            PersonaNotFoundError: 1up author not found
+            PersonaNotFoundError: Upvote author not found
             UnauthorizedError: Author is a foreign Persona
         """
 
@@ -1240,116 +1240,116 @@ class Star(Serializable, db.Model):
             author = Persona.query.get(author_id)
 
         if author is None:
-            raise PersonaNotFoundError("1up author not found")
+            raise PersonaNotFoundError("Upvote author not found")
 
         if not author.controlled():
-            raise UnauthorizedError("Can't toggle 1ups with foreign Persona {}".format(author))
+            raise UnauthorizedError("Can't toggle Upvotes with foreign Persona {}".format(author))
 
-        # Check whether 1up has been previously issued
-        oneup = self.oneups.filter_by(author=author).first()
-        if oneup is not None:
-            old_state = oneup.get_state()
-            oneup.set_state(-1) if oneup.state == 0 else oneup.set_state(0)
+        # Check whether Upvote has been previously issued
+        upvote = self.upvotes.filter_by(author=author).first()
+        if upvote is not None:
+            old_state = upvote.get_state()
+            upvote.set_state(-1) if upvote.state == 0 else upvote.set_state(0)
         else:
             old_state = False
-            oneup = Oneup(id=uuid4().hex, author=author, parent=self)
-            self.children.append(oneup)
+            upvote = Upvote(id=uuid4().hex, author=author, parent=self)
+            self.children.append(upvote)
 
-        # Commit 1up
+        # Commit Upvote
         db.session.add(self)
         db.session.commit()
-        cache.delete_memoized(self.oneup_count)
-        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
+        cache.delete_memoized(self.upvote_count)
+        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
 
-        return oneup
+        return upvote
 
     def link_url(self):
-        """Return URL if this Star has a Link-Planet
+        """Return URL if this Thought has a Link-Percept
 
         Returns:
             String: URL of the first associated Link
             Bool: False if no link was found
         """
-        # planet_assoc = self.planet_assocs.join(PlanetAssociation.planet.of_type(LinkPlanet)).first()
+        # percept_assoc = self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkPercept)).first()
 
-        for planet_assoc in self.planet_assocs:
-            if planet_assoc.planet.kind == "link":
-                return planet_assoc.planet.url
+        for percept_assoc in self.percept_assocs:
+            if percept_assoc.percept.kind == "link":
+                return percept_assoc.percept.url
         return None
 
     def has_picture(self):
-        """Return True if this Star has a PicturePlanet"""
+        """Return True if this Thought has a PicturePercept"""
         try:
-            first = self.picture_planets()[0]
+            first = self.picture_percepts()[0]
         except IndexError:
             first = None
 
         return first is not None
 
     def has_text(self):
-        """Return True if this Star has a TextPlanet"""
+        """Return True if this Thought has a TextPercept"""
         try:
-            first = self.text_planets()[0]
+            first = self.text_percepts()[0]
         except IndexError:
             first = None
 
         return first is not None
 
-    def picture_planets(self):
-        """Return pictures of this Star"""
-        return self.planet_assocs.join(PlanetAssociation.planet.of_type(LinkedPicturePlanet)).all()
+    def picture_percepts(self):
+        """Return pictures of this Thought"""
+        return self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkedPicturePercept)).all()
 
-    def text_planets(self):
-        """Return TextPlanets of this Star"""
-        return self.planet_assocs.join(PlanetAssociation.planet.of_type(TextPlanet)).all()
+    def text_percepts(self):
+        """Return TextPercepts of this Thought"""
+        return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
 
 
-class PlanetAssociation(db.Model):
-    """Associates Planets with Stars, defining an author for the connection"""
+class PerceptAssociation(db.Model):
+    """Associates Percepts with Thoughts, defining an author for the connection"""
 
-    __tablename__ = 'planet_association'
-    star_id = db.Column(db.String(32), db.ForeignKey('star.id'), primary_key=True)
-    planet_id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
-    planet = db.relationship("Planet", backref="star_assocs")
-    author_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-    author = db.relationship("Persona", backref="planet_assocs")
+    __tablename__ = 'percept_association'
+    thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
+    percept_id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+    percept = db.relationship("Percept", backref="thought_assocs")
+    author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+    author = db.relationship("Identity", backref="percept_assocs")
 
     @classmethod
     def validate_changeset(cls, changeset):
-        """Return True if `changeset` is a valid PlanetAssociation changeset"""
+        """Return True if `changeset` is a valid PerceptAssociation changeset"""
 
         if "author_id" not in changeset or changeset["author_id"] is None:
             logger.warning("Missing `author_id` in changeset")
             return False
 
-        if "planet" not in changeset or changeset["planet"] is None or "kind" not in changeset["planet"]:
-            logger.warning("Missing `planet` or `planet.kind` in changeset")
+        if "percept" not in changeset or changeset["percept"] is None or "kind" not in changeset["percept"]:
+            logger.warning("Missing `percept` or `percept.kind` in changeset")
             return False
 
-        p_cls = LinkPlanet if changeset["planet"]["kind"] == "link" else LinkedPicturePlanet
+        p_cls = LinkPercept if changeset["percept"]["kind"] == "link" else LinkedPicturePercept
         return p_cls.validate_changeset(changeset)
 
     @property
     def sort_rank(self):
-        """Return sort rank of this planet type
+        """Return sort rank of this percept type
 
         Returns:
             Depending on self.__class__ an Integer > 0 is returned
         """
-        return planet_sort_rank.get(self.planet.kind, 1000)
+        return percept_sort_rank.get(self.percept.kind, 1000)
 
 
-t_planet_vesicles = db.Table(
-    'planet_vesicles',
-    db.Column('planet_id', db.String(32), db.ForeignKey('planet.id')),
+t_percept_vesicles = db.Table(
+    'percept_vesicles',
+    db.Column('percept_id', db.String(32), db.ForeignKey('percept.id')),
     db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Planet(Serializable, db.Model):
-    """A Planet represents an attachment"""
+class Percept(Serializable, db.Model):
+    """A Percept represents an attachment"""
 
-    __tablename__ = 'planet'
+    __tablename__ = 'percept'
 
     _insert_required = ["id", "title", "created", "modified", "source", "kind"]
     _update_required = ["id", "title", "modified", "source"]
@@ -1364,21 +1364,21 @@ class Planet(Serializable, db.Model):
 
     vesicles = db.relationship(
         'Vesicle',
-        secondary='planet_vesicles',
-        primaryjoin='planet_vesicles.c.planet_id==planet.c.id',
-        secondaryjoin='planet_vesicles.c.vesicle_id==vesicle.c.id')
+        secondary='percept_vesicles',
+        primaryjoin='percept_vesicles.c.percept_id==percept.c.id',
+        secondaryjoin='percept_vesicles.c.vesicle_id==vesicle.c.id')
 
     __mapper_args__ = {
-        'polymorphic_identity': 'planet',
+        'polymorphic_identity': 'percept',
         'polymorphic_on': kind
     }
 
     def __repr__(self):
-        return "<Planet:{} [{}]>".format(self.kind, self.id[:6])
+        return "<Percept:{} [{}]>".format(self.kind, self.id[:6])
 
     def get_state(self):
         """
-        Return publishing state of this planet.
+        Return publishing state of this percept.
 
         Returns:
             Integer:
@@ -1389,43 +1389,43 @@ class Planet(Serializable, db.Model):
                 2 -- private
                 3 -- updating
         """
-        return PLANET_STATES[self.state][0]
+        return PERCEPT_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this planet
+        Set the publishing state of this percept
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.PLANET_STATES
+            new_state (int) code of the new state as defined in nucleus.PERCEPT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in PLANET_STATES.keys():
-            raise ValueError("{} ({}) is not a valid planet state").format(
+        if new_state not in PERCEPT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid percept state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         if stub is not None:
-            if not isinstance(stub, Planet):
+            if not isinstance(stub, Percept):
                 raise ValueError("Invalid stub of type {}".format(type(stub)))
 
-            new_planet = stub
-            new_planet.id = changeset["id"]
-            new_planet.title = changeset["title"]
-            new_planet.source = changeset["source"]
-            new_planet.created = created_dt
-            new_planet.modified = modified_dt
+            new_percept = stub
+            new_percept.id = changeset["id"]
+            new_percept.title = changeset["title"]
+            new_percept.source = changeset["source"]
+            new_percept.created = created_dt
+            new_percept.modified = modified_dt
         else:
-            new_planet = Planet(
+            new_percept = Percept(
                 id=changeset["id"],
                 title=changeset["title"],
                 created=created_dt,
@@ -1433,11 +1433,11 @@ class Planet(Serializable, db.Model):
                 source=changeset["source"]
             )
 
-        logger.info("Created new {} from changeset".format(new_planet))
-        return new_planet
+        logger.info("Created new {} from changeset".format(new_percept))
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         self.title = changeset["title"]
@@ -1460,7 +1460,7 @@ class Tag(Serializable, db.Model):
 
         inst = cls.query.filter_by(name=name).first()
         if inst is None:
-            inst = cls.query.join(TagPlanet).filter(TagPlanet.title == name).first()
+            inst = cls.query.join(TagPercept).filter(TagPercept.title == name).first()
             if inst is None:
                 inst = cls(name=name, *args, **kwargs)
                 inst.id = uuid4().hex
@@ -1468,18 +1468,18 @@ class Tag(Serializable, db.Model):
         return inst
 
 
-class TagPlanet(Planet):
+class TagPercept(Percept):
     """A Tag"""
 
     _insert_required = ["id", "title", "created", "modified", "kind", "tag"]
     _update_required = ["id", "modified"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     tag_id = db.Column(db.String(32), db.ForeignKey('tag.id'))
     tag = db.relationship('Tag', backref="synonyms")
 
     def __init__(self, *args, **kwargs):
-        Planet.__init__(self, *args, **kwargs)
+        Percept.__init__(self, *args, **kwargs)
         self.id = uuid4().hex
         self.tag = Tag.get_or_create(kwargs["title"])
 
@@ -1488,15 +1488,15 @@ class TagPlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
-        stub = TagPlanet()
-        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+        stub = TagPercept()
+        new_percept = Percept.create_from_changeset(changeset, stub=stub,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.tag = Tag.get_or_create(changeset["tag"])
-        return new_planet
+        new_percept.tag = Tag.get_or_create(changeset["tag"])
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+        Percept.update_from_changeset(self, changeset, update_sender, update_recipient)
 
         if "tag" in changeset:
             self.tag = Tag.get_or_create(changeset["tag"])
@@ -1507,20 +1507,20 @@ class TagPlanet(Planet):
     }
 
 
-class Mention(Planet):
+class Mention(Percept):
     """Mention an Identity to notify them"""
 
     _insert_required = ["id", "created", "modified", "kind", "identity_id",
         "text"]
     _update_required = ["id", "modified"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     identity_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
     identity = db.relationship('Identity', backref="mentions")
     text = db.Column(db.String(80))
 
     def __init__(self, *args, **kwargs):
-        Planet.__init__(self, *args, **kwargs)
+        Percept.__init__(self, *args, **kwargs)
         self.id = uuid4().hex
 
         for k in ["identity", "text"]:
@@ -1535,21 +1535,21 @@ class Mention(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, update_sender=None, update_recipient=None):
-        stub = TagPlanet()
-        new_planet = Planet.create_from_changeset(changeset, stub=stub,
+        stub = TagPercept()
+        new_percept = Percept.create_from_changeset(changeset, stub=stub,
             update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.identity = Identity.get(changeset["identity_id"])
-        if new_planet.identity is None:
+        new_percept.identity = Identity.get(changeset["identity_id"])
+        if new_percept.identity is None:
             raise PersonaNotFoundError("Mention links Identity {}".format(
                 changeset["identity_id"]))
 
-        new_planet.text = changeset["text"]
+        new_percept.text = changeset["text"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        Planet.update_from_changeset(self, changeset, update_sender, update_recipient)
+        Percept.update_from_changeset(self, changeset, update_sender, update_recipient)
 
         if "identity_id" in changeset:
             self.identity = Identity.get(changeset["identity_id"])
@@ -1567,13 +1567,13 @@ class Mention(Planet):
     }
 
 
-class PicturePlanet(Planet):
+class PicturePercept(Percept):
     """A Picture attachment"""
 
     _insert_required = ["id", "title", "created", "modified", "source", "filename", "kind"]
     _update_required = ["id", "title", "modified", "source", "filename"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     filename = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1582,28 +1582,28 @@ class PicturePlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
-        stub = PicturePlanet()
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
+        stub = PicturePercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.filename = changeset["filename"]
+        new_percept.filename = changeset["filename"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class LinkedPicturePlanet(Planet):
+class LinkedPicturePercept(Percept):
     """A linked picture attachment"""
 
     _insert_required = ["id", "title", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     url = db.Column(db.Text)
     # width = db.Column(db.Integer, default=0)
     # height = db.Column(db.Integer, default=0)
@@ -1614,29 +1614,29 @@ class LinkedPicturePlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = LinkedPicturePlanet()
+            stub = LinkedPicturePercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.url = changeset["url"]
+        new_percept.url = changeset["url"]
 
         # if "width" in changeset:
-        #     new_planet.width = int(changeset["width"])
+        #     new_percept.width = int(changeset["width"])
 
         # if "height" in changeset:
-        #     new_planet.height = int(changeset["height"])
+        #     new_percept.height = int(changeset["height"])
 
-        return new_planet
+        return new_percept
 
     @classmethod
     def get_or_create(cls, url, *args, **kwargs):
         """Get or create an instance from a URL
 
         Args:
-            url (String): URL of the Planet to retrieve
+            url (String): URL of the Percept to retrieve
             args, kwargs: get passed on to cls.__init__ if a new instance is created
 
         Raises:
@@ -1654,17 +1654,17 @@ class LinkedPicturePlanet(Planet):
         return inst
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class LinkPlanet(Planet):
+class LinkPercept(Percept):
     """A URL attachment"""
 
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     url = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1676,7 +1676,7 @@ class LinkPlanet(Planet):
         """Get or create an instance from a URL
 
         Args:
-            url (String): URL of the Planet to retrieve
+            url (String): URL of the Percept to retrieve
             title (String): Optional title. Is only set when no existing
                 instance is found
 
@@ -1696,16 +1696,16 @@ class LinkPlanet(Planet):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = LinkPlanet()
+            stub = LinkPercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.url = changeset["url"]
+        new_percept.url = changeset["url"]
 
-        return new_planet
+        return new_percept
 
     def iframe_url(self):
         """Return a URL to embed within an iframe if this link's domain provides such
@@ -1729,7 +1729,7 @@ class LinkPlanet(Planet):
         return rv
 
     def favicon_url(self):
-        """Return the URL of this Planet's domain favicon
+        """Return the URL of this Percept's domain favicon
 
         Returns:
             string: URL of the favicon as a 32 pixel image"""
@@ -1747,17 +1747,17 @@ class LinkPlanet(Planet):
             return "http://grabicon.com/icon?domain={}".format(domain)
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
 
-class TextPlanet(Planet):
+class TextPercept(Percept):
     """A longform text attachment"""
 
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "text", "kind"]
     _update_required = ["id", "title", "modified", "source", "text"]
 
-    id = db.Column(db.String(32), db.ForeignKey('planet.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
     text = db.Column(db.Text)
 
     __mapper_args__ = {
@@ -1766,39 +1766,39 @@ class TextPlanet(Planet):
 
     @classmethod
     def get_or_create(cls, text, source=None):
-        """Return planet containing text if it already exists or create it
+        """Return percept containing text if it already exists or create it
 
         Args:
-            text (String): Content value of the TextPlanet
+            text (String): Content value of the TextPercept
             source (String): Source description, max 128 chars
         """
         h = sha256(text.encode('utf-8')).hexdigest()[:32]
-        planet = TextPlanet.query.get(h)
+        percept = TextPercept.query.get(h)
 
-        if planet is None:
+        if percept is None:
             logger.info("Storing new text")
-            planet = TextPlanet(
+            percept = TextPercept(
                 id=h,
                 text=text,
                 source=source)
 
-        return planet
+        return percept
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Planet object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
         if stub is None:
-            stub = TextPlanet()
+            stub = TextPercept()
 
-        new_planet = Planet.create_from_changeset(changeset,
+        new_percept = Percept.create_from_changeset(changeset,
             stub=stub, update_sender=update_sender, update_recipient=update_recipient)
 
-        new_planet.text = changeset["text"]
+        new_percept.text = changeset["text"]
 
-        return new_planet
+        return new_percept
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Planet object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
 
     def reading_time(self):
@@ -1811,26 +1811,26 @@ class TextPlanet(Planet):
         return datetime.timedelta(minutes=int(word_count / 200))
 
 
-class Oneup(Star):
-    """A 1up is a vote that signals interest in its parent Star"""
+class Upvote(Thought):
+    """A Upvote is a vote that signals interest in its parent Thought"""
 
     _insert_required = ["id", "created", "modified", "author_id", "parent_id", "state"]
     _update_required = ["id", "modified", "state"]
 
     __mapper_args__ = {
-        'polymorphic_identity': 'oneup'
+        'polymorphic_identity': 'upvote'
     }
 
     def __repr__(self):
         if ["author_id", "parent_id"] in dir(self):
-            return "<1up <Persona {}> -> <Star {}> ({})>".format(
+            return "<Upvote <Persona {}> -> <Thought {}> ({})>".format(
                 self.author_id[:6], self.parent_id[:6], self.get_state())
         else:
-            return "<1up ({})>".format(self.get_state())
+            return "<Upvote ({})>".format(self.get_state())
 
     def get_state(self):
         """
-        Return publishing state of this 1up.
+        Return publishing state of this Upvote.
 
         Returns:
             Integer:
@@ -1838,40 +1838,40 @@ class Oneup(Star):
                  0 -- (active)
                  1 -- (unknown author)
         """
-        return ONEUP_STATES[self.state][0]
+        return UPVOTE_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this 1up
+        Set the publishing state of this Upvote
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.ONEUP_STATES
+            new_state (int) code of the new state as defined in nucleus.UPVOTE_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in ONEUP_STATES.keys():
-            raise ValueError("{} ({}) is not a valid 1up state".format(
+        if new_state not in UPVOTE_STATES.keys():
+            raise ValueError("{} ({}) is not a valid Upvote state".format(
                 new_state, type(new_state)))
         else:
             self.state = new_state
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Oneup object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Upvote object from a changeset (See Serializable.create_from_changeset). """
         created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         if stub is not None:
-            oneup = stub
-            oneup.created = created_dt
-            oneup.modified = modified_dt
-            oneup.author = None
-            oneup.source = changeset["source"],
-            oneup.parent_id = None
+            upvote = stub
+            upvote.created = created_dt
+            upvote.modified = modified_dt
+            upvote.author = None
+            upvote.source = changeset["source"],
+            upvote.parent_id = None
         else:
-            oneup = Oneup(
+            upvote = Upvote(
                 id=changeset["id"],
                 created=created_dt,
                 modified=modified_dt,
@@ -1879,28 +1879,28 @@ class Oneup(Star):
                 parent=None,
             )
 
-        oneup.set_state(int(changeset["state"]))
+        upvote.set_state(int(changeset["state"]))
 
         author = Persona.query.get(changeset["author_id"])
         if author is None:
             # TODO: Send request for author
-            oneup.author_id = changeset["author_id"]
-            if oneup.get_state() >= 0:
-                oneup.set_state(1)
+            upvote.author_id = changeset["author_id"]
+            if upvote.get_state() >= 0:
+                upvote.set_state(1)
         else:
-            oneup.author = author
+            upvote.author = author
 
-        star = Star.query.get(changeset["parent_id"])
-        if star is None:
-            logger.warning("Parent Star for Oneup not found")
-            oneup.parent_id = changeset["parent_id"]
+        thought = Thought.query.get(changeset["parent_id"])
+        if thought is None:
+            logger.warning("Parent Thought for Upvote not found")
+            upvote.parent_id = changeset["parent_id"]
         else:
-            star.children.append(oneup)
+            thought.children.append(upvote)
 
-        return oneup
+        return upvote
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Oneup object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Upvote object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         self.modified = modified_dt
 
@@ -1914,7 +1914,7 @@ class Souma(Serializable, db.Model):
 
     __tablename__ = "souma"
 
-    _insert_required = ["id", "modified", "crypt_public", "sign_public", "starmap_id"]
+    _insert_required = ["id", "modified", "crypt_public", "sign_public", "mindset_id"]
     id = db.Column(db.String(32), primary_key=True)
 
     crypt_private = db.Column(db.Text)
@@ -1922,8 +1922,8 @@ class Souma(Serializable, db.Model):
     sign_private = db.Column(db.Text)
     sign_public = db.Column(db.Text)
 
-    starmap_id = db.Column(db.String(32), db.ForeignKey('starmap.id'))
-    starmap = db.relationship('Starmap')
+    mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+    mindset = db.relationship('Mindset')
 
     _version_string = db.Column(db.String(32), default="")
 
@@ -2030,26 +2030,26 @@ class Souma(Serializable, db.Model):
         return key_public.Verify(data, signature)
 
 
-t_starmap_vesicles = db.Table(
-    'starmap_vesicles',
-    db.Column('starmap_id', db.String(32), db.ForeignKey('starmap.id')),
+t_mindset_vesicles = db.Table(
+    'mindset_vesicles',
+    db.Column('mindset_id', db.String(32), db.ForeignKey('mindset.id')),
     db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
-class Starmap(Serializable, db.Model):
+class Mindset(Serializable, db.Model):
     """
-    Starmaps are collections of objects with associated layout information.
+    Mindsets are collections of objects with associated layout information.
 
     Atributes:
         id: 32 byte ID generated by uuid4().hex
         modified: Datetime of last recorded modification
-        author: Persona that created this Starmap
-        kind: For what kind of context is this Starmap used
-        index: Query for Stars that are contained in this Starmap
-        vesicles: List of Vesicles that describe this Starmap
+        author: Persona that created this Mindset
+        kind: For what kind of context is this Mindset used
+        index: Query for Thoughts that are contained in this Mindset
+        vesicles: List of Vesicles that describe this Mindset
     """
-    __tablename__ = 'starmap'
+    __tablename__ = 'mindset'
 
     _insert_required = ["id", "modified", "author_id", "kind", "state"]
     _update_required = ["id", "modified", "index"]
@@ -2063,18 +2063,18 @@ class Starmap(Serializable, db.Model):
         db.String(32),
         db.ForeignKey('identity.id', use_alter=True, name="fk_author_id"))
     author = db.relationship('Identity',
-        backref=db.backref('starmaps'),
-        primaryjoin="Identity.id==Starmap.author_id",
+        backref=db.backref('mindsets'),
+        primaryjoin="Identity.id==Mindset.author_id",
         post_update=True)
 
     vesicles = db.relationship(
         'Vesicle',
-        secondary='starmap_vesicles',
-        primaryjoin='starmap_vesicles.c.starmap_id==starmap.c.id',
-        secondaryjoin='starmap_vesicles.c.vesicle_id==vesicle.c.id')
+        secondary='mindset_vesicles',
+        primaryjoin='mindset_vesicles.c.mindset_id==mindset.c.id',
+        secondaryjoin='mindset_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __contains__(self, key):
-        """Return True if the given key is contained in this Starmap.
+        """Return True if the given key is contained in this Mindset.
 
         Args:
             key: db.model.key to look for
@@ -2088,7 +2088,7 @@ class Starmap(Serializable, db.Model):
         return self.index.paginate(1).total
 
     def authorize(self, action, author_id=None):
-        """Return True if this Starmap authorizes `action` for `author_id`
+        """Return True if this Mindset authorizes `action` for `author_id`
 
         Args:
             action (String): Action to be performed (see Synapse.CHANGE_TYPES)
@@ -2116,7 +2116,7 @@ class Starmap(Serializable, db.Model):
 
     def get_state(self):
         """
-        Return publishing state of this star.
+        Return publishing state of this thought.
 
         Returns:
             Integer:
@@ -2127,27 +2127,27 @@ class Starmap(Serializable, db.Model):
                 2 -- private
                 3 -- updating
         """
-        return STAR_STATES[self.state][0]
+        return THOUGHT_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this star
+        Set the publishing state of this thought
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.STAR_STATES
+            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in STAR_STATES.keys():
-            raise ValueError("{} ({}) is not a valid star state").format(
+        if new_state not in THOUGHT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid thought state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
 
     def get_absolute_url(self):
-        """Return URL for this Starmap depending on kind"""
+        """Return URL for this Mindset depending on kind"""
         rv = None
 
         if self.kind.startswith("movement"):
@@ -2176,39 +2176,39 @@ class Starmap(Serializable, db.Model):
         data = Serializable.export(self, exclude=ex, include=include, update=update)
 
         data["index"] = list()
-        for star in self.index.filter('Star.state >= 0'):
+        for thought in self.index.filter('Thought.state >= 0'):
             data["index"].append({
-                "id": star.id,
-                "modified": star.modified.isoformat(),
-                "author_id": star.author.id
+                "id": thought.id,
+                "modified": thought.modified.isoformat(),
+                "author_id": thought.author.id
             })
 
         return data
 
     @property
     def name(self):
-        """Return an identifier for this Starmap that can be used in UI
+        """Return an identifier for this Mindset that can be used in UI
 
         Returns:
-            string: Name for this Starmap
+            string: Name for this Mindset
         """
         if self.kind.endswith("_blog"):
             rv = "{} blog".format(self.author.username)
         elif self.kind.endswith("_mspace"):
             rv = "{} mindspace".format(self.author.username)
         else:
-            rv = "Starmap by {}".format(self.author.username)
+            rv = "Mindset by {}".format(self.author.username)
         return rv
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Starmap object from a changeset
+        """Create a new Mindset object from a changeset
 
         Args:
             changeset (dict): Contains all keys from self._insert_required
 
         Returns:
-            Starmap: The new object
+            Mindset: The new object
 
         Raises:
             ValueError: If a value is invalid
@@ -2218,15 +2218,15 @@ class Starmap(Serializable, db.Model):
 
         author = Identity.query.get(changeset["author_id"])
         if author is None:
-            raise PersonaNotFoundError("Starmap author not known")
+            raise PersonaNotFoundError("Mindset author not known")
 
         if stub is not None:
-            new_starmap = stub
-            new_starmap.modified = modified_dt
-            new_starmap.author = author
-            new_starmap.kind = changeset["kind"]
+            new_mindset = stub
+            new_mindset.modified = modified_dt
+            new_mindset.author = author
+            new_mindset.kind = changeset["kind"]
         else:
-            new_starmap = Starmap(
+            new_mindset = Mindset(
                 id=changeset["id"],
                 modified=modified_dt,
                 author=author,
@@ -2234,41 +2234,41 @@ class Starmap(Serializable, db.Model):
             )
 
         request_list = list()
-        for star_changeset in changeset["index"]:
-            star = Star.query.get(star_changeset["id"])
-            star_changeset_modified = iso8601.parse_date(star_changeset["modified"]).replace(tzinfo=None)
+        for thought_changeset in changeset["index"]:
+            thought = Thought.query.get(thought_changeset["id"])
+            thought_changeset_modified = iso8601.parse_date(thought_changeset["modified"]).replace(tzinfo=None)
 
-            if star is None or star.get_state() == -1 or star.modified < star_changeset_modified:
+            if thought is None or thought.get_state() == -1 or thought.modified < thought_changeset_modified:
                 request_list.append({
-                    "type": "Star",
-                    "id": star_changeset["id"],
+                    "type": "Thought",
+                    "id": thought_changeset["id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
 
-                if star is None:
-                    star_author = Identity.query.get(star_changeset["author_id"])
-                    if star_author is not None:
-                        star = Star(
-                            id=star_changeset["id"],
-                            modified=star_changeset_modified,
-                            author=star_author,
-                            starmap_id=new_starmap.id
+                if thought is None:
+                    thought_author = Identity.query.get(thought_changeset["author_id"])
+                    if thought_author is not None:
+                        thought = Thought(
+                            id=thought_changeset["id"],
+                            modified=thought_changeset_modified,
+                            author=thought_author,
+                            mindset_id=new_mindset.id
                         )
-                        star.set_state(-1)
-                        db.session.add(star)
+                        thought.set_state(-1)
+                        db.session.add(thought)
                         db.session.commit()
 
-        db.session.add(new_starmap)
+        db.session.add(new_mindset)
         db.session.commit()
 
         for req in request_list:
-            request_objects.send(Starmap.create_from_changeset, message=req)
+            request_objects.send(Mindset.create_from_changeset, message=req)
 
-        return new_starmap
+        return new_mindset
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update the Starmap's index using a changeset
+        """Update the Mindset's index using a changeset
 
         Args:
             changeset (dict): Contains a key for every attribute to update
@@ -2281,50 +2281,50 @@ class Starmap(Serializable, db.Model):
         self.modified = modified
 
         # Update index
-        remove_stars = set([s.id for s in self.index if s is not None])
-        added_stars = list()
+        remove_thoughts = set([s.id for s in self.index if s is not None])
+        added_thoughts = list()
         request_list = list()
-        for star_changeset in changeset["index"]:
-            star = Star.query.get(star_changeset["id"])
-            star_changeset_modified = iso8601.parse_date(star_changeset["modified"]).replace(tzinfo=None)
+        for thought_changeset in changeset["index"]:
+            thought = Thought.query.get(thought_changeset["id"])
+            thought_changeset_modified = iso8601.parse_date(thought_changeset["modified"]).replace(tzinfo=None)
 
-            if star is not None and star.id in remove_stars:
-                remove_stars.remove(star.id)
+            if thought is not None and thought.id in remove_thoughts:
+                remove_thoughts.remove(thought.id)
 
-            if star is None or star.get_state() == -1 or star.modified < star_changeset_modified:
-                # No copy of Star available or copy is outdated
+            if thought is None or thought.get_state() == -1 or thought.modified < thought_changeset_modified:
+                # No copy of Thought available or copy is outdated
 
                 request_list.append({
-                    "type": "Star",
-                    "id": star_changeset["id"],
+                    "type": "Thought",
+                    "id": thought_changeset["id"],
                     "author_id": update_recipient.id,
                     "recipient_id": update_sender.id,
                 })
 
-                if star is None:
-                    star_author = Persona.query.get(star_changeset["author_id"])
-                    if star_author is not None:
-                        star = Star(
-                            id=star_changeset["id"],
-                            modified=star_changeset_modified,
-                            author=star_author
+                if thought is None:
+                    thought_author = Persona.query.get(thought_changeset["author_id"])
+                    if thought_author is not None:
+                        thought = Thought(
+                            id=thought_changeset["id"],
+                            modified=thought_changeset_modified,
+                            author=thought_author
                         )
-                        star.set_state(-1)
-                        db.session.add(star)
+                        thought.set_state(-1)
+                        db.session.add(thought)
                         db.session.commit()
 
-            self.index.append(star)
-            added_stars.append(star)
+            self.index.append(thought)
+            added_thoughts.append(thought)
 
-        for s_id in remove_stars:
-            s = Star.query.get(s_id)
+        for s_id in remove_thoughts:
+            s = Thought.query.get(s_id)
             self.index.remove(s)
 
-        logger.info("Updated {}: {} stars added, {} requested, {} removed".format(
-            self, len(added_stars), len(request_list), len(remove_stars)))
+        logger.info("Updated {}: {} thoughts added, {} requested, {} removed".format(
+            self, len(added_thoughts), len(request_list), len(remove_thoughts)))
 
         for req in request_list:
-            request_objects.send(Starmap.create_from_changeset, message=req)
+            request_objects.send(Mindset.create_from_changeset, message=req)
 
 
 class MovementMemberAssociation(db.Model):
@@ -2357,7 +2357,7 @@ t_movement_vesicles = db.Table(
 
 
 class Movement(Identity):
-    """Represents an entity that is comprised of users collaborating on stars
+    """Represents an entity that is comprised of users collaborating on thoughts
 
     Attributes:
         id (String): 32 byte ID of this movement
@@ -2385,16 +2385,16 @@ class Movement(Identity):
         lazy="dynamic")
 
     def __init__(self, *args, **kwargs):
-        """Attach index starmap to new movements"""
+        """Attach index mindset to new movements"""
         Identity.__init__(self, *args, **kwargs)
-        index = Starmap(
+        index = Mindset(
             id=uuid4().hex,
             author=self,
             kind="movement_blog",
             modified=self.created)
         self.blog = index
 
-        mindspace = Starmap(
+        mindspace = Mindset(
             id=uuid4().hex,
             author=self,
             kind="movement_mspace",
@@ -2473,7 +2473,7 @@ class Movement(Identity):
 
     def get_state(self):
         """
-        Return publishing state of this Movement. (temporarily uses planet states)
+        Return publishing state of this Movement. (temporarily uses percept states)
 
         Returns:
             Integer:
@@ -2484,7 +2484,7 @@ class Movement(Identity):
                 2 -- private
                 3 -- updating
         """
-        return PLANET_STATES[self.state][0]
+        return PERCEPT_STATES[self.state][0]
 
     @property
     def member_count(self):
@@ -2506,17 +2506,17 @@ class Movement(Identity):
 
     def set_state(self, new_state):
         """
-        Set the publishing state of this Movement (temporarily uses planet states)
+        Set the publishing state of this Movement (temporarily uses percept states)
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.PLANET_STATES
+            new_state (int) code of the new state as defined in nucleus.PERCEPT_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in PLANET_STATES.keys():
-            raise ValueError("{} ({}) is not a valid planet state").format(
+        if new_state not in PERCEPT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid percept state").format(
                 new_state, type(new_state))
         else:
             self.state = new_state
