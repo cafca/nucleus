@@ -1284,15 +1284,6 @@ class Thought(Serializable, db.Model):
                 return percept_assoc.percept.url
         return None
 
-    def has_picture(self):
-        """Return True if this Thought has a PicturePercept"""
-        try:
-            first = self.picture_percepts()[0]
-        except IndexError:
-            first = None
-
-        return first is not None
-
     def has_text(self):
         """Return True if this Thought has a TextPercept"""
         try:
@@ -1301,10 +1292,6 @@ class Thought(Serializable, db.Model):
             first = None
 
         return first is not None
-
-    def picture_percepts(self):
-        """Return pictures of this Thought"""
-        return self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkedPicturePercept)).all()
 
     def text_percepts(self):
         """Return TextPercepts of this Thought"""
@@ -1565,36 +1552,6 @@ class Mention(Percept):
     }
 
 
-class PicturePercept(Percept):
-    """A Picture attachment"""
-
-    _insert_required = ["id", "title", "created", "modified", "source", "filename", "kind"]
-    _update_required = ["id", "title", "modified", "source", "filename"]
-
-    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-    filename = db.Column(db.Text)
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'picture'
-    }
-
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
-        stub = PicturePercept()
-
-        new_percept = Percept.create_from_changeset(changeset,
-            stub=stub, update_sender=update_sender, update_recipient=update_recipient)
-
-        new_percept.filename = changeset["filename"]
-
-        return new_percept
-
-    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
-        raise NotImplementedError
-
-
 class LinkedPicturePercept(Percept):
     """A linked picture attachment"""
 
@@ -1647,6 +1604,8 @@ class LinkedPicturePercept(Percept):
 
         inst = cls.query.filter_by(id=url_hash).first()
         if inst is None:
+            logger.info("Creating new linked picture for hash {}".format(
+                url_hash))
             inst = cls(id=url_hash, url=url, *args, **kwargs)
 
         return inst

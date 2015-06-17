@@ -62,7 +62,7 @@ ALLOWED_COLORS = {
 
 CHANGE_TYPES = ("insert", "update", "delete")
 
-ATTACHMENT_KINDS = ("link", "linkedpicture", "picture", "text")
+ATTACHMENT_KINDS = ("link", "linkedpicture", "text")
 
 
 class InvalidSignatureError(Exception):
