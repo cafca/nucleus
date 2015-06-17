@@ -29,7 +29,7 @@ class Vesicle(db.Model):
     """
     Container for peer messages
 
-    see https://github.com/ciex/rktik/wiki/Vesicle
+    see https://github.com/ciex/souma/wiki/Vesicle
 
     """
     __tablename__ = "vesicle"
@@ -367,7 +367,7 @@ class Vesicle(db.Model):
         for attr in self.get_send_attributes():
             message[attr] = getattr(self, attr)
         message["created"] = datetime.datetime.utcnow().isoformat()
-        message["rktik_id"] = current_app.config["RKTIK_ID"]
+        message["souma_id"] = current_app.config["SOUMA_ID"]
         r = json.dumps(message, indent=indent)
 
         if plainenc:
@@ -408,7 +408,7 @@ class Vesicle(db.Model):
                 enc=msg["enc"])
 
             send_attributes = msg.keys()
-            send_attributes.remove('rktik_id')
+            send_attributes.remove('souma_id')
             vesicle.send_attributes = send_attributes
 
             vesicle.author = Persona.query.get(msg["author_id"])
