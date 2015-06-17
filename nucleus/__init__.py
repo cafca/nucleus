@@ -51,7 +51,7 @@ PERCEPT_STATES = {
 }
 
 # Possible states of 1ups
-ONEUP_STATES = {
+UPVOTE_STATES = {
     -1: "disabled",
     0: "active",
     1: "unknown author"

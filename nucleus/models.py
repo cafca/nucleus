@@ -12,7 +12,7 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from uuid import uuid4
 
-from . import ONEUP_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
+from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES, logger, percept_sort_rank
 from .helpers import epoch_seconds
@@ -1178,37 +1178,37 @@ class Thought(Serializable, db.Model):
         from math import log
         # Uncomment to assign a score with analytics.score
         # s = score(self)
-        s = self.oneup_count()
+        s = self.upvote_count()
         order = log(max(abs(s), 1), 10)
         sign = 1 if s > 0 else -1 if s < 0 else 0
         return round(order + sign * epoch_seconds(self.created) / 45000, 7)
 
     @property
-    def oneups(self):
-        """Returns a query for all oneups, including disabled ones"""
-        return self.children.filter_by(kind="oneup")
+    def upvotes(self):
+        """Returns a query for all upvotes, including disabled ones"""
+        return self.children.filter_by(kind="upvote")
 
-    def oneupped(self):
+    def upvoteped(self):
         """
         Return True if active Persona has 1upped this Thought
         """
 
-        oneup = self.oneups.filter_by(author=current_user.active_persona).first()
+        upvote = self.upvotes.filter_by(author=current_user.active_persona).first()
 
-        if oneup is None or oneup.state < 0:
+        if upvote is None or upvote.state < 0:
             return False
         else:
             return True
 
     @cache.memoize(timeout=10)
-    def oneup_count(self):
+    def upvote_count(self):
         """
         Return the number of verified upvotes this Thought has receieved
 
         Returns:
             Int: Number of upvotes
         """
-        return self.oneups.filter(Oneup.state >= 0).count()
+        return self.upvotes.filter(Upvote.state >= 0).count()
 
     def comment_count(self):
         """
@@ -1219,7 +1219,7 @@ class Thought(Serializable, db.Model):
         """
         return self.comments.filter_by(state=0).count()
 
-    def toggle_oneup(self, author_id=None):
+    def toggle_upvote(self, author_id=None):
         """
         Toggle 1up for this Thought on/off
 
@@ -1227,7 +1227,7 @@ class Thought(Serializable, db.Model):
             author_id (String): Optional Persona ID that issued the 1up. Defaults to active Persona.
 
         Returns:
-            Oneup: The toggled oneup object
+            Upvote: The toggled upvote object
 
         Raises:
             PersonaNotFoundError: 1up author not found
@@ -1246,22 +1246,22 @@ class Thought(Serializable, db.Model):
             raise UnauthorizedError("Can't toggle 1ups with foreign Persona {}".format(author))
 
         # Check whether 1up has been previously issued
-        oneup = self.oneups.filter_by(author=author).first()
-        if oneup is not None:
-            old_state = oneup.get_state()
-            oneup.set_state(-1) if oneup.state == 0 else oneup.set_state(0)
+        upvote = self.upvotes.filter_by(author=author).first()
+        if upvote is not None:
+            old_state = upvote.get_state()
+            upvote.set_state(-1) if upvote.state == 0 else upvote.set_state(0)
         else:
             old_state = False
-            oneup = Oneup(id=uuid4().hex, author=author, parent=self)
-            self.children.append(oneup)
+            upvote = Upvote(id=uuid4().hex, author=author, parent=self)
+            self.children.append(upvote)
 
         # Commit 1up
         db.session.add(self)
         db.session.commit()
-        cache.delete_memoized(self.oneup_count)
-        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=oneup, ))
+        cache.delete_memoized(self.upvote_count)
+        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
 
-        return oneup
+        return upvote
 
     def link_url(self):
         """Return URL if this Thought has a Link-Percept
@@ -1811,14 +1811,14 @@ class TextPercept(Percept):
         return datetime.timedelta(minutes=int(word_count / 200))
 
 
-class Oneup(Thought):
+class Upvote(Thought):
     """A 1up is a vote that signals interest in its parent Thought"""
 
     _insert_required = ["id", "created", "modified", "author_id", "parent_id", "state"]
     _update_required = ["id", "modified", "state"]
 
     __mapper_args__ = {
-        'polymorphic_identity': 'oneup'
+        'polymorphic_identity': 'upvote'
     }
 
     def __repr__(self):
@@ -1838,20 +1838,20 @@ class Oneup(Thought):
                  0 -- (active)
                  1 -- (unknown author)
         """
-        return ONEUP_STATES[self.state][0]
+        return UPVOTE_STATES[self.state][0]
 
     def set_state(self, new_state):
         """
         Set the publishing state of this 1up
 
         Parameters:
-            new_state (int) code of the new state as defined in nucleus.ONEUP_STATES
+            new_state (int) code of the new state as defined in nucleus.UPVOTE_STATES
 
         Raises:
             ValueError: If new_state is not an Int or not a valid state of this object
         """
         new_state = int(new_state)
-        if new_state not in ONEUP_STATES.keys():
+        if new_state not in UPVOTE_STATES.keys():
             raise ValueError("{} ({}) is not a valid 1up state".format(
                 new_state, type(new_state)))
         else:
@@ -1859,19 +1859,19 @@ class Oneup(Thought):
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Oneup object from a changeset (See Serializable.create_from_changeset). """
+        """Create a new Upvote object from a changeset (See Serializable.create_from_changeset). """
         created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
 
         if stub is not None:
-            oneup = stub
-            oneup.created = created_dt
-            oneup.modified = modified_dt
-            oneup.author = None
-            oneup.source = changeset["source"],
-            oneup.parent_id = None
+            upvote = stub
+            upvote.created = created_dt
+            upvote.modified = modified_dt
+            upvote.author = None
+            upvote.source = changeset["source"],
+            upvote.parent_id = None
         else:
-            oneup = Oneup(
+            upvote = Upvote(
                 id=changeset["id"],
                 created=created_dt,
                 modified=modified_dt,
@@ -1879,28 +1879,28 @@ class Oneup(Thought):
                 parent=None,
             )
 
-        oneup.set_state(int(changeset["state"]))
+        upvote.set_state(int(changeset["state"]))
 
         author = Persona.query.get(changeset["author_id"])
         if author is None:
             # TODO: Send request for author
-            oneup.author_id = changeset["author_id"]
-            if oneup.get_state() >= 0:
-                oneup.set_state(1)
+            upvote.author_id = changeset["author_id"]
+            if upvote.get_state() >= 0:
+                upvote.set_state(1)
         else:
-            oneup.author = author
+            upvote.author = author
 
         thought = Thought.query.get(changeset["parent_id"])
         if thought is None:
-            logger.warning("Parent Thought for Oneup not found")
-            oneup.parent_id = changeset["parent_id"]
+            logger.warning("Parent Thought for Upvote not found")
+            upvote.parent_id = changeset["parent_id"]
         else:
-            thought.children.append(oneup)
+            thought.children.append(upvote)
 
-        return oneup
+        return upvote
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Oneup object from a changeset (See Serializable.update_from_changeset). """
+        """Update a new Upvote object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
         self.modified = modified_dt
 
