@@ -25,13 +25,6 @@ logger = logging.getLogger('nucleus')
 source_format = lambda address: None if address is None else \
     "{host}:{port}".format(host=address[0], port=address[1])
 
-percept_sort_rank = {
-    "PicturePercept": 100,
-    "LinkedPicturePercept": 200,
-    "TextPercept": 400,
-    "LinkPercept": 300
-}
-
 # Possible states of thoughts
 THOUGHT_STATES = {
     -2: (-2, "deleted"),

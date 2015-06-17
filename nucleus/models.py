@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger, percept_sort_rank
+    CHANGE_TYPES, logger
 from .helpers import epoch_seconds
 
 from database import cache, db
@@ -974,9 +974,16 @@ class Thought(Serializable, db.Model):
 
     @property
     def attachments(self):
-        return self.percept_assocs \
+        pa = self.percept_assocs \
             .join(Percept) \
             .filter(Percept.kind.in_(ATTACHMENT_KINDS))
+
+        rv = {
+            "linkedpicture": pa.filter(Percept.kind == "linkedpicture").all(),
+            "text": pa.filter(Percept.kind == "text").all(),
+            "link": pa.filter(Percept.kind == "link").all()
+        }
+        return rv
 
     @property
     def comments(self):
@@ -1328,15 +1335,6 @@ class PerceptAssociation(db.Model):
 
         p_cls = LinkPercept if changeset["percept"]["kind"] == "link" else LinkedPicturePercept
         return p_cls.validate_changeset(changeset)
-
-    @property
-    def sort_rank(self):
-        """Return sort rank of this percept type
-
-        Returns:
-            Depending on self.__class__ an Integer > 0 is returned
-        """
-        return percept_sort_rank.get(self.percept.kind, 1000)
 
 
 t_percept_vesicles = db.Table(
