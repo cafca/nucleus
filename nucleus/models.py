@@ -423,7 +423,7 @@ class Identity(Serializable, db.Model):
             })
 
         if blog is None:
-            blog = Mindset(id=changeset["blog_id"])
+            blog = Blog(id=changeset["blog_id"])
             blog.state = -1
 
         ident.blog = blog
@@ -907,6 +907,11 @@ class Thought(Serializable, db.Model):
 
     __tablename__ = "thought"
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'thought',
+        'polymorphic_on': 'kind'
+    }
+
     _insert_required = ["id", "text", "created", "modified", "author_id",
         "percept_assocs", "parent_id", "mindset_id"]
     _update_required = ["id", "text", "modified"]
@@ -946,11 +951,6 @@ class Thought(Serializable, db.Model):
         primaryjoin='mindset.c.id==thought.c.mindset_id',
         backref=db.backref('index', lazy="dynamic"))
     mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'thought',
-        'polymorphic_on': kind
-    }
 
     def __repr__(self):
         text = self.text.encode('utf-8')
@@ -2012,6 +2012,11 @@ class Mindset(Serializable, db.Model):
     _insert_required = ["id", "modified", "author_id", "kind", "state"]
     _update_required = ["id", "modified", "index"]
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'mindset',
+        'polymorphic_on': 'kind'
+    }
+
     id = db.Column(db.String(32), primary_key=True)
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     kind = db.Column(db.String(16))
@@ -2056,10 +2061,10 @@ class Mindset(Serializable, db.Model):
             Boolean: True if authorized
         """
         if Serializable.authorize(self, action, author_id=author_id):
-            if self.kind == "persona_blog":
+            if self.kind == "blog" and isinstance(self.author, Persona):
                 p = Persona.request_persona(self.author_id)
                 return p.id == author_id
-            elif self.kind == "movement_blog":
+            elif self.kind == "blog" and isinstance(self.author, Movement):
                 # Everyone can update
                 if action == "update":
                     return True
@@ -2106,28 +2111,7 @@ class Mindset(Serializable, db.Model):
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
-        rv = None
-
-        if self.kind.startswith("movement"):
-            if self.kind == "movement_blog":
-                m = Movement.query.filter(Movement.blog_id == self.id).first()
-                rv = url_for("web.movement_blog", id=m.id)
-            elif self.kind == "movement_mspace":
-                m = Movement.query.filter(Movement.mindspace_id == self.id).first()
-                rv = url_for("web.movement_mindspace", id=m.id)
-
-        elif self.kind.startswith("persona"):
-            if self.kind == "persona_blog":
-                p = Persona.query.filter(Persona.blog_id == self.id).first()
-                rv = url_for("web.persona", id=p.id)
-            elif self.kind == "persona_mspace" and self.author == current_user.active_persona:
-                rv = url_for("web.persona", id=self.author_id)
-
-        elif self.kind == "index":
-            p = Persona.query.filter(Persona.index_id == self.id).first()
-            rv = url_for("web.persona", id=p.id)
-
-        return rv
+        raise NotImplementedError("Base Mindset doesn't have its own URL scheme")
 
     def export(self, exclude=[], include=None, update=False):
         ex = set(exclude + ["index", ])
@@ -2150,12 +2134,7 @@ class Mindset(Serializable, db.Model):
         Returns:
             string: Name for this Mindset
         """
-        if self.kind.endswith("_blog"):
-            rv = "{} blog".format(self.author.username)
-        elif self.kind.endswith("_mspace"):
-            rv = "{} mindspace".format(self.author.username)
-        else:
-            rv = "Mindset by {}".format(self.author.username)
+        rv = "Mindset by {}".format(self.author.username)
         return rv
 
     @staticmethod
@@ -2184,7 +2163,14 @@ class Mindset(Serializable, db.Model):
             new_mindset.author = author
             new_mindset.kind = changeset["kind"]
         else:
-            new_mindset = Mindset(
+            if changeset["kind"] == "blog":
+                mscls = Blog
+            elif changeset["kind"] == "mindspace":
+                mscls = Mindspace
+            else:
+                mscls = Mindset
+
+            new_mindset = mscls(
                 id=changeset["id"],
                 modified=modified_dt,
                 author=author,
@@ -2285,6 +2271,73 @@ class Mindset(Serializable, db.Model):
             request_objects.send(Mindset.create_from_changeset, message=req)
 
 
+class Mindspace(Mindset):
+    """Model internal thoughts of an Identity"""
+    __mapper_args__ = {
+        'polymorphic_identity': 'mindspace'
+    }
+
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        return "{} mindspace".format(self.author.username)
+
+    def get_absolute_url(self):
+        """Return URL for this Mindset depending on kind"""
+        rv = None
+
+        if isinstance(self.author, Movement):
+            m = Movement.query.filter(Movement.mindspace_id == self.id).first()
+            rv = url_for("web.movement_mindspace", id=m.id)
+
+        elif isinstance(self.author, Persona):
+            if self.author == current_user.active_persona:
+                rv = url_for("web.persona", id=self.author_id)
+
+        else:
+            raise NotImplementedError("Mindspace with unknown author kind has no URL")
+
+        return rv
+
+
+class Blog(Mindset):
+    """Model external communication of an identity"""
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'blog'
+    }
+
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        return "{} blog".format(self.author.username)
+
+    def get_absolute_url(self):
+        """Return URL for this Mindset depending on kind"""
+        rv = None
+
+        if isinstance(self.author, Movement):
+            m = Movement.query.filter(Movement.blog_id == self.id).first()
+            rv = url_for("web.movement_blog", id=m.id)
+
+        elif isinstance(self.author, Persona):
+            p = Persona.query.filter(Persona.blog_id == self.id).first()
+            rv = url_for("web.persona", id=p.id)
+
+        else:
+            raise NotImplementedError("Blog with unknown author kind has no URL")
+
+        return rv
+
+
 class MovementMemberAssociation(db.Model):
     """Associates Personas with Movements"""
 
@@ -2345,19 +2398,15 @@ class Movement(Identity):
     def __init__(self, *args, **kwargs):
         """Attach index mindset to new movements"""
         Identity.__init__(self, *args, **kwargs)
-        index = Mindset(
+        self.blog = Blog(
             id=uuid4().hex,
             author=self,
-            kind="movement_blog",
             modified=self.created)
-        self.blog = index
 
-        mindspace = Mindset(
+        self.mindspace = Mindspace(
             id=uuid4().hex,
             author=self,
-            kind="movement_mspace",
             modified=self.created)
-        self.mindspace = mindspace
 
     def __repr__(self):
         try:
