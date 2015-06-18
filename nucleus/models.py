@@ -2338,6 +2338,49 @@ class Blog(Mindset):
         return rv
 
 
+class Dialogue(Mindset):
+    """Model a private conversation between two parties"""
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'dialogue'
+    }
+
+    other = db.relationship("Identity")
+    other_id = db.Column(db.String(32), db.ForeignKey(
+        'identity.id', use_alter=True, name="fk_dialogue_other"))
+
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        if not current_user.is_anonymous():
+            if current_user.active_persona == self.author:
+                rv = "Dialogue with {}".format(self.other.username)
+            elif current_user.active_persona == self.other:
+                rv = "Dialogue with {}".format(self.author.username)
+        else:
+            rv = "Private Dialogue"
+
+        return rv
+
+    def get_absolute_url(self):
+        """Return URL for this Mindset depending on kind"""
+        rv = None
+
+        if current_user.is_anonymous():
+            rv = None
+        else:
+            if current_user.active_persona == self.author:
+                rv = url_for("web.persona", id=self.other)
+            elif current_user.active_persona == self.other:
+                rv = url_for("web.persona", id=self.author)
+
+        return rv
+
+
 class MovementMemberAssociation(db.Model):
     """Associates Personas with Movements"""
 
