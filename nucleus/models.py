@@ -895,6 +895,19 @@ class ReplyNotification(Notification):
         self.recipient = parent_thought.author
 
 
+class DialogueNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'dialogue_notification'
+    }
+
+    def __init__(self, author, recipient):
+        super(DialogueNotification, self).__init__()
+        self.text = "{} sent you a private message".format(author.username),
+        self.url = url_for("web.persona", id=author.id),
+        self.source = author.username,
+        self.recipient = recipient
+
+
 t_thought_vesicles = db.Table(
     'thought_vesicles',
     db.Column('thought_id', db.String(32), db.ForeignKey('thought.id')),
