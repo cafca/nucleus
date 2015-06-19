@@ -2,6 +2,7 @@
 import datetime
 import json
 import iso8601
+import logging
 import semantic_version
 import re
 
@@ -14,12 +15,13 @@ from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger
-from .helpers import epoch_seconds
+    CHANGE_TYPES
+from .helpers import epoch_seconds, process_attachments
 
 from database import cache, db
 
 request_objects = notification_signals.signal('request-objects')
+logger = logging.getLogger('nucleus')
 
 
 class Serializable():
@@ -1037,6 +1039,93 @@ class Thought(Serializable, db.Model):
     @property
     def tags(self):
         return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+
+    @classmethod
+    def create_from_input(cls, text, author=None, longform=None,
+            longform_source=None, mindset=None, parent=None,
+            extract_percepts=True):
+        """Create a new Thought object from user input
+
+        Args:
+            text (String): Title text of the thought
+            author (Persona): Author of the Thought. If None, this is set to
+                the currently active persona
+            longform (String): Extended text of the Thought
+            mindset (Mindset): Optional context in which the Thought will be placed
+            parent (Thought): Optional parent to which this is a reply
+            extract_percepts (Booleand): Option for extracting percepts from
+                longform parameter
+
+        Returns:
+            dict: with keys
+                instance: The new Thought object
+                notifications: List of notification objects resulting from
+                    posting this Thought
+
+        Raises:
+            ValueError: For illegal parameter values or combinations thereof
+
+        """
+        thought_created = datetime.datetime.utcnow()
+        thought_id = uuid4().hex
+        notifications = list()
+        percepts = set()
+
+        if author is None:
+            if current_user.is_anonymous():
+                raise ValueError("Thought author can't be anonymous ({}).".format(
+                    author))
+            logger.info("Set new thought author to active persona")
+            author = current_user.active_persona
+
+        if mindset is not None and isinstance(mindset, Dialogue):
+            recipient = mindset.author if mindset.author is not author \
+                else mindset.other
+            notifications.append(DialogueNotification(
+                author=author, recipient=recipient))
+
+        instance = cls(
+            id=thought_id,
+            text=text,
+            author=author,
+            parent=parent,
+            created=thought_created,
+            modified=thought_created,
+            mindset=mindset)
+
+        if extract_percepts:
+            text, percepts = process_attachments(instance.text)
+            instance.text = text
+            logger.info("Extracted {} percepts from title".format(len(percepts)))
+
+            if longform and len(longform) > 0:
+                lftext, lfpercepts = process_attachments(longform)
+                percepts = percepts.union(lfpercepts)
+                logger.info("Extracted {} percepts from longform".format(len(percepts)))
+
+                lftext_percept = TextPercept.get_or_create(lftext,
+                    source=longform_source)
+                percepts.add(lftext_percept)
+                logger.info("Attached longform content")
+
+            for percept in percepts:
+                if isinstance(percept, Mention):
+                    notifications.append(MentionNotification(percept,
+                        author, url_for('web.thought', id=thought_id)))
+
+                assoc = PerceptAssociation(
+                    thought=instance, percept=percept, author=author)
+                instance.percept_assocs.append(assoc)
+                logger.info("Attached {} to new {}".format(percept, instance))
+
+        if parent:
+            notifications.append(ReplyNotification(parent_thought=parent,
+                author=author, url=url_for('web.thought', id=thought_id)))
+
+        return {
+            "instance": instance,
+            "notifications": notifications
+        }
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
