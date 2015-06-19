@@ -2345,7 +2345,8 @@ class Dialogue(Mindset):
         'polymorphic_identity': 'dialogue'
     }
 
-    other = db.relationship("Identity")
+    other = db.relationship("Identity",
+        primaryjoin="identity.c.id==mindset.c.other_id")
     other_id = db.Column(db.String(32), db.ForeignKey(
         'identity.id', use_alter=True, name="fk_dialogue_other"))
 
