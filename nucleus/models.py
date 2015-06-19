@@ -1118,7 +1118,7 @@ class Thought(Serializable, db.Model):
                 instance.percept_assocs.append(assoc)
                 logger.info("Attached {} to new {}".format(percept, instance))
 
-        if parent:
+        if parent and parent.author != author:
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
