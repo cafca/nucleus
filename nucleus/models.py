@@ -2394,6 +2394,32 @@ class Dialogue(Mindset):
 
         return rv
 
+    @classmethod
+    def get_chat(cls, author, other):
+        """Get or create a dialogue between the two given Personas
+
+        Return value may be a new instance. Check for that using
+
+        >> from sqlalchemy import inspect
+        >> inspect(rv).transient == True
+
+        Args:
+            author (Identity): One party to the conversation
+            other (Identity): Other party to the conversation
+
+        Returns:
+            Dialogue: Existing or new dialogue between the two parties
+        """
+        rv = cls.query.filter_by(author=author).filter_by(other=other).first()
+        if rv is None:
+            rv = cls.query.filter_by(author=other).filter_by(other=author).first()
+        if rv is None:
+            logger.info("Creating new dialogue between {} and {}".format(
+                author, other))
+            rv = cls(id=uuid4().hex, author=author, other=other)
+
+        return rv
+
 
 class MovementMemberAssociation(db.Model):
     """Associates Personas with Movements"""
