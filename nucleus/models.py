@@ -2499,9 +2499,9 @@ class Dialogue(Mindset):
             rv = None
         else:
             if current_user.active_persona == self.author:
-                rv = url_for("web.persona", id=self.other)
+                rv = url_for("web.persona", id=self.other_id)
             elif current_user.active_persona == self.other:
-                rv = url_for("web.persona", id=self.author)
+                rv = url_for("web.persona", id=self.author_id)
 
         return rv
 
