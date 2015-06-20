@@ -2,6 +2,7 @@
 import datetime
 import json
 import iso8601
+import logging
 import semantic_version
 import re
 
@@ -14,12 +15,13 @@ from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES, logger
-from .helpers import epoch_seconds
+    CHANGE_TYPES
+from .helpers import epoch_seconds, process_attachments
 
 from database import cache, db
 
 request_objects = notification_signals.signal('request-objects')
+logger = logging.getLogger('nucleus')
 
 
 class Serializable():
@@ -29,11 +31,11 @@ class Serializable():
         _insert_required: Default attributes to include in export
         _update_required: Default attributes to include in export with update=True
     """
-    id = None
-    modified = None
-
     _insert_required = ["id", "modified"]
     _update_required = ["id", "modified"]
+
+    id = None
+    modified = None
 
     def authorize(self, action, author_id=None):
         """Return True if this object authorizes `action` for `author_id`
@@ -48,6 +50,30 @@ class Serializable():
         if action not in CHANGE_TYPES:
             return False
         return True
+
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
+        """Create a new instance from a changeset.
+
+        Args:
+            changeset (dict): Dictionary of model values. Requires all keys
+                defined in cls._insert_required with class-specific values.
+            stub (Serializable): (Optional) model instance whose values will be
+                overwritten with those defined in changeset.
+            update_sender (Persona): (Optional) author of this changeset. Will be
+                used as recipient of subsequent object requests.
+            update_recipient (Persona): (Optional) recipient of this changeset.
+                Will be used as sender of subsequent object requests.
+
+        Returns:
+            Serializable: Instance created from changeset
+
+        Raises:
+            KeyError: Missing key in changeset
+            TypeError: Argument has wrong type
+            ValueError: Argument value cannot be processed
+        """
+        raise NotImplementedError()
 
     def export(self, exclude=[], include=None, update=False):
         """Return this object as a dict.
@@ -81,49 +107,6 @@ class Serializable():
         """
         return json.dumps(self.export(update=update), indent=4)
 
-    @classmethod
-    def validate_changeset(cls, changeset, update=False):
-        """Check whether changeset contains all keys defined as required for this class.
-
-        Args:
-            changeset(dict): See created_from_changeset, update_from_changeset
-            update(Bool): If True use cls._update_required instead of cls._insert_required
-
-        Returns:
-            List: Missing keys
-        """
-        required_keys = cls._update_required if update else cls._insert_required
-        missing = list()
-
-        for k in required_keys:
-            if k not in changeset.keys():
-                missing.append(k)
-        return missing
-
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new instance from a changeset.
-
-        Args:
-            changeset (dict): Dictionary of model values. Requires all keys
-                defined in cls._insert_required with class-specific values.
-            stub (Serializable): (Optional) model instance whose values will be
-                overwritten with those defined in changeset.
-            update_sender (Persona): (Optional) author of this changeset. Will be
-                used as recipient of subsequent object requests.
-            update_recipient (Persona): (Optional) recipient of this changeset.
-                Will be used as sender of subsequent object requests.
-
-        Returns:
-            Serializable: Instance created from changeset
-
-        Raises:
-            KeyError: Missing key in changeset
-            TypeError: Argument has wrong type
-            ValueError: Argument value cannot be processed
-        """
-        raise NotImplementedError()
-
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update self with new values in changeset
 
@@ -145,6 +128,25 @@ class Serializable():
         """
         raise NotImplementedError()
 
+    @classmethod
+    def validate_changeset(cls, changeset, update=False):
+        """Check whether changeset contains all keys defined as required for this class.
+
+        Args:
+            changeset(dict): See created_from_changeset, update_from_changeset
+            update(Bool): If True use cls._update_required instead of cls._insert_required
+
+        Returns:
+            List: Missing keys
+        """
+        required_keys = cls._update_required if update else cls._insert_required
+        missing = list()
+
+        for k in required_keys:
+            if k not in changeset.keys():
+                missing.append(k)
+        return missing
+
 
 class PersonaAssociation(db.Model):
     """Connects user accounts and personas"""
@@ -158,18 +160,23 @@ class User(UserMixin, db.Model):
     """A user of the website"""
 
     __tablename__ = 'user'
+
     id = db.Column(db.String(32), primary_key=True, default=uuid4().hex)
-    email = db.Column(db.String(128))
+
+    active = db.Column(db.Boolean(), default=True)
+    authenticated = db.Column(db.Boolean(), default=True)
     created = db.Column(db.DateTime)
+    email = db.Column(db.String(128))
     modified = db.Column(db.DateTime)
     pw_hash = db.Column(db.String(64))
-    active = db.Column(db.Boolean(), default=True)
     validated_on = db.Column(db.DateTime)
-    authenticated = db.Column(db.Boolean(), default=True)
-    associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
     signup_code = db.Column(db.String(128))
+
+    # Relations
     active_persona = db.relationship("Persona")
     active_persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
+
+    associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
 
     def __repr__(self):
         return "<User {}>".format(self.email.decode('utf-8'))
@@ -183,6 +190,18 @@ class User(UserMixin, db.Model):
         pw_hash = sha256(password).hexdigest()
         return self.pw_hash == pw_hash
 
+    def get_id(self):
+        return self.id
+
+    def is_active(self):
+        return self.active
+
+    def is_anonymous(self):
+        return False
+
+    def is_authenticated(self):
+        return self.authenticated
+
     def set_password(self, password):
         """Set password to a new value
 
@@ -192,17 +211,14 @@ class User(UserMixin, db.Model):
         pw_hash = sha256(password).hexdigest()
         self.pw_hash = pw_hash
 
-    def get_id(self):
-        return self.id
+    def validate(self):
+        """Set the validated_on property to the current time"""
+        self.validated_on = datetime.datetime.utcnow()
 
-    def is_authenticated(self):
-        return self.authenticated
-
-    def is_active(self):
-        return self.active
-
-    def is_anonymous(self):
-        return False
+    @property
+    def validated(self):
+        """Is True if validated_on has been set"""
+        return self.validated_on is not None
 
     def valid_signup_code(self, signup_code):
         """Return True if the given signup code is valid, and less than 7 days
@@ -218,15 +234,6 @@ class User(UserMixin, db.Model):
             return False
 
         return True
-
-    def validate(self):
-        """Set the validated_on property to the current time"""
-        self.validated_on = datetime.datetime.utcnow()
-
-    @property
-    def validated(self):
-        """Is True if validated_on has been set"""
-        return self.validated_on is not None
 
 
 t_identity_vesicles = db.Table(
@@ -255,37 +262,40 @@ class Identity(Serializable, db.Model):
 
     __tablename__ = "identity"
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'identity',
+        'polymorphic_on': "kind"
+    }
+
     _insert_required = ["id", "username", "crypt_public", "sign_public", "modified", "blog_id"]
     _update_required = ["id", "modified"]
 
     _stub = db.Column(db.Boolean, default=False)
+
     id = db.Column(db.String(32), primary_key=True)
-    kind = db.Column(db.String(32))
+
+    color = db.Column(db.String(6), default="B8C5D6")
     created = db.Column(db.DateTime)
-    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
-    username = db.Column(db.String(80))
     crypt_private = db.Column(db.Text)
     crypt_public = db.Column(db.Text)
+    kind = db.Column(db.String(32))
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     sign_private = db.Column(db.Text)
     sign_public = db.Column(db.Text)
-    color = db.Column(db.String(6), default="B8C5D6")
+    username = db.Column(db.String(80))
 
-    vesicles = db.relationship(
-        'Vesicle',
-        secondary='identity_vesicles',
-        primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
-        secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
-
+    # Relations
     blog_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     blog = db.relationship('Mindset', primaryjoin='mindset.c.id==identity.c.blog_id')
 
     mindspace_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     mindspace = db.relationship('Mindset', primaryjoin='mindset.c.id==identity.c.mindspace_id')
 
-    __mapper_args__ = {
-        'polymorphic_identity': 'identity',
-        'polymorphic_on': kind
-    }
+    vesicles = db.relationship(
+        'Vesicle',
+        secondary='identity_vesicles',
+        primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
+        secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __repr__(self):
         try:
@@ -320,64 +330,6 @@ class Identity(Serializable, db.Model):
                 if Persona.query.get(current_user.active_persona.id).user == self.user:
                     return True
         return False
-
-    @staticmethod
-    def list_controlled():
-        if not current_user.is_anonymous() and current_user.active_persona is not None:
-            controlled_user = User.query \
-                .join(PersonaAssociation) \
-                .filter(PersonaAssociation.right_id == current_user.active_persona.id) \
-                .first()
-
-            return [asc.persona for asc in controlled_user.associations] if controlled_user else []
-        else:
-            return []
-
-    def notification_list(self, limit=5):
-        return self.notifications \
-            .filter_by(unread=True) \
-            .order_by(Notification.modified.desc()) \
-            .limit(limit) \
-            .all()
-
-    def generate_keys(self, password):
-        """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
-
-        # TODO: Store keys encrypted
-        rsa1 = RsaPrivateKey.Generate()
-        self.sign_private = str(rsa1)
-        self.sign_public = str(rsa1.public_key)
-
-        rsa2 = RsaPrivateKey.Generate()
-        self.crypt_private = str(rsa2)
-        self.crypt_public = str(rsa2.public_key)
-
-    def encrypt(self, data):
-        """ Encrypt data using RSA """
-
-        key_public = RsaPublicKey.Read(self.crypt_public)
-        return b64encode(key_public.Encrypt(data))
-
-    def decrypt(self, cypher):
-        """ Decrypt cyphertext using RSA """
-
-        cypher = b64decode(cypher)
-        key_private = RsaPrivateKey.Read(self.crypt_private)
-        return key_private.Decrypt(cypher)
-
-    def sign(self, data):
-        """ Sign data using RSA """
-
-        key_private = RsaPrivateKey.Read(self.sign_private)
-        signature = key_private.Sign(data)
-        return b64encode(signature)
-
-    def verify(self, data, signature_b64):
-        """ Verify a signature using RSA """
-
-        signature = b64decode(signature_b64)
-        key_public = RsaPublicKey.Read(self.sign_public)
-        return key_public.Verify(data, signature)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None, kind=None, request_sources=True):
@@ -439,6 +391,73 @@ class Identity(Serializable, db.Model):
 
         return ident
 
+    def decrypt(self, cypher):
+        """ Decrypt cyphertext using RSA """
+
+        cypher = b64decode(cypher)
+        key_private = RsaPrivateKey.Read(self.crypt_private)
+        return key_private.Decrypt(cypher)
+
+    def encrypt(self, data):
+        """ Encrypt data using RSA """
+
+        key_public = RsaPublicKey.Read(self.crypt_public)
+        return b64encode(key_public.Encrypt(data))
+
+    def generate_keys(self, password):
+        """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
+
+        # TODO: Store keys encrypted
+        rsa1 = RsaPrivateKey.Generate()
+        self.sign_private = str(rsa1)
+        self.sign_public = str(rsa1.public_key)
+
+        rsa2 = RsaPrivateKey.Generate()
+        self.crypt_private = str(rsa2)
+        self.crypt_public = str(rsa2.public_key)
+
+    def has_blogged(self, thought):
+        """Return True if this Identity has blogged thought
+
+        When a post is blogged, the blog post is created as a reply to the
+        original post, hence this is checking whether this Identity has replied
+        to the thought on its blog
+
+        Args:
+            thought (Thought): Thought to check
+        """
+        count = self.blog.index \
+            .filter(Thought.parent == thought) \
+            .filter(Thought.author == self) \
+            .count()
+        return count > 0
+
+    @staticmethod
+    def list_controlled():
+        if not current_user.is_anonymous() and current_user.active_persona is not None:
+            controlled_user = User.query \
+                .join(PersonaAssociation) \
+                .filter(PersonaAssociation.right_id == current_user.active_persona.id) \
+                .first()
+
+            return [asc.persona for asc in controlled_user.associations] if controlled_user else []
+        else:
+            return []
+
+    def notification_list(self, limit=5):
+        return self.notifications \
+            .filter_by(unread=True) \
+            .order_by(Notification.modified.desc()) \
+            .limit(limit) \
+            .all()
+
+    def sign(self, data):
+        """ Sign data using RSA """
+
+        key_private = RsaPrivateKey.Read(self.sign_private)
+        signature = key_private.Sign(data)
+        return b64encode(signature)
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """See Serializable.update_from_changeset"""
         request_list = list()
@@ -471,6 +490,13 @@ class Identity(Serializable, db.Model):
 
         for req in request_list:
             request_objects.send(Identity.create_from_changeset, message=req)
+
+    def verify(self, data, signature_b64):
+        """ Verify a signature using RSA """
+
+        signature = b64decode(signature_b64)
+        key_public = RsaPublicKey.Read(self.sign_public)
+        return key_public.Verify(data, signature)
 
 #
 # Setup follower relationship on Persona objects
@@ -506,11 +532,15 @@ class Persona(Identity):
     _update_required = Identity._update_required
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
-    email = db.Column(db.String(120))
-    auth = db.Column(db.String(32), default=uuid4().hex)
-    session_id = db.Column(db.String(32), default=uuid4().hex)
-    last_connected = db.Column(db.DateTime, default=datetime.datetime.now())
 
+    auth = db.Column(db.String(32), default=uuid4().hex)
+    last_connected = db.Column(db.DateTime, default=datetime.datetime.now())
+    # Myelin offset stores the date at which the last Vesicle receieved from Myelin was created
+    myelin_offset = db.Column(db.DateTime)
+    email = db.Column(db.String(120))
+    session_id = db.Column(db.String(32), default=uuid4().hex)
+
+    # Relations
     contacts = db.relationship('Persona',
         secondary='contacts',
         lazy="dynamic",
@@ -518,16 +548,13 @@ class Persona(Identity):
         primaryjoin='contacts.c.left_id==persona.c.id',
         secondaryjoin='contacts.c.right_id==persona.c.id')
 
+    index_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+    index = db.relationship('Mindset', primaryjoin='mindset.c.id==persona.c.index_id')
+
     movements_followed = db.relationship('Movement',
         secondary='movements_followed',
         primaryjoin='movements_followed.c.persona_id==persona.c.id',
         secondaryjoin='movements_followed.c.movement_id==movement.c.id')
-
-    index_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
-    index = db.relationship('Mindset', primaryjoin='mindset.c.id==persona.c.index_id')
-
-    # Myelin offset stores the date at which the last Vesicle receieved from Myelin was created
-    myelin_offset = db.Column(db.DateTime)
 
     def __repr__(self):
         try:
@@ -549,61 +576,6 @@ class Persona(Identity):
         if Identity.authorize(self, action, author_id=author_id):
             return (self.id == author_id)
         return False
-
-    def get_email_hash(self):
-        """Return sha256 hash of this user's email address"""
-        return sha256(self.email).hexdigest()
-
-    def get_absolute_url(self):
-        return url_for('web.persona', id=self.id)
-
-    def export(self, exclude=[], include=None, update=False):
-        exclude = set(exclude + ["contacts", "movements", "movements_followed"])
-        data = Identity.export(self, exclude=exclude, include=include, update=update)
-
-        data["contacts"] = list()
-        for contact in self.contacts:
-            data["contacts"].append({
-                "id": contact.id,
-            })
-
-        data["movements"] = list()
-        for movement in self.movements:
-            data["movements"].append({
-                "id": movement.id,
-            })
-
-        data["movements_followed"] = list()
-        for movement in self.movements_followed:
-            data["movements_followed"].append({
-                "id": movement.id
-            })
-
-        return data
-
-    def reset(self):
-        """Reset session_id"""
-        self.session_id = uuid4().hex
-        self.auth = uuid4().hex
-        return self.session_id
-
-    def timeout(self):
-        return self.last_connected + current_app.config['SESSION_EXPIRATION_TIME']
-
-    @staticmethod
-    def request_persona(persona_id):
-        """Return a Persona profile, loading it from Glia if neccessary
-
-        Args:
-            persona_id (String): ID of the required Persona
-
-        Returns:
-            Persona: If a record was found
-            None: If no record was found
-        """
-        from synapse import ElectricalSynapse
-        electrical = ElectricalSynapse()
-        return electrical.get_persona(persona_id)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -660,6 +632,161 @@ class Persona(Identity):
             request_objects.send(Persona.create_from_changeset, message=req)
 
         return p
+
+    def export(self, exclude=[], include=None, update=False):
+        exclude = set(exclude + ["contacts", "movements", "movements_followed"])
+        data = Identity.export(self, exclude=exclude, include=include, update=update)
+
+        data["contacts"] = list()
+        for contact in self.contacts:
+            data["contacts"].append({
+                "id": contact.id,
+            })
+
+        data["movements"] = list()
+        for movement in self.movements:
+            data["movements"].append({
+                "id": movement.id,
+            })
+
+        data["movements_followed"] = list()
+        for movement in self.movements_followed:
+            data["movements_followed"].append({
+                "id": movement.id
+            })
+
+        return data
+
+    def get_absolute_url(self):
+        return url_for('web.persona', id=self.id)
+
+    def get_email_hash(self):
+        """Return sha256 hash of this user's email address"""
+        return sha256(self.email).hexdigest()
+
+    @staticmethod
+    def request_persona(persona_id):
+        """Return a Persona profile, loading it from Glia if neccessary
+
+        Args:
+            persona_id (String): ID of the required Persona
+
+        Returns:
+            Persona: If a record was found
+            None: If no record was found
+        """
+        from synapse import ElectricalSynapse
+        electrical = ElectricalSynapse()
+        return electrical.get_persona(persona_id)
+
+    def reset(self):
+        """Reset session_id"""
+        self.session_id = uuid4().hex
+        self.auth = uuid4().hex
+        return self.session_id
+
+    def timeout(self):
+        return self.last_connected + current_app.config['SESSION_EXPIRATION_TIME']
+
+    def toggle_following_movement(self, movement):
+        """Toggle whether this Persona is following a movement.
+
+        Args:
+            movement (Movement): Movement entity to be (un)followed
+
+        Returns:
+            boolean -- True if the movement is now being followed, False if not
+        """
+        following = False
+
+        try:
+            self.movements_followed.remove(movement)
+            logger.info("{} is not following {} anymore".format(self, movement))
+        except ValueError:
+            self.movements_followed.append(movement)
+            following = True
+            logger.info("{} is now following {}".format(self, movement))
+
+        return following
+
+    def toggle_movement_membership(self, movement, role="member"):
+        """Toggle whether this Persona is member of a movement.
+
+        Also enables movement following for this Persona/Movement.
+
+        Args:
+            movement (Movement): Movement entity to be become member of
+            role (String): What role to take in the movement. May be "member"
+                or "admin"
+
+        Returns:
+            Updated MovementMemberAssociation object or None if it was deleted
+        """
+        if movement not in self.movements_followed:
+            logger.info("Setting {} to follow {}.".format(self, movement))
+            self.toggle_following_movement(movement)
+
+        gms = MovementMemberAssociation.query.filter_by(movement_id=movement.id). \
+            filter_by(persona_id=self.id).first()
+
+        if gms is None:
+            logger.info("Enabling membership of {} in {}".format(self, movement))
+            gms = MovementMemberAssociation(
+                persona=self,
+                movement_id=movement.id,
+                role=role,
+            )
+            rv = gms
+        else:
+            if self.id == movement.admin_id:
+                raise NotImplementedError("Admin can't leave the movement")
+            logger.info("Removing membership of {} in {}".format(self, movement))
+            gms.query.delete()
+            rv = None
+        return rv
+
+    def update_contacts(self, contact_list):
+        """Update Persona's contacts from a list of the new contacts
+
+        Args:
+            contact_list (list): List of dictionaries with keys:
+                id (String) -- 32 byte ID of the contact
+
+        Returns:
+            list: List of missing Persona IDs to be requested
+        """
+        updated_contacts = 0
+        request_list = list()
+
+        # stale_contacts contains all old contacts at first, all current
+        # contacts get then removed so that the remaining can get deleted
+        stale_contacts = set(self.contacts)
+
+        for contact in contact_list:
+            c = Persona.query.get(contact["id"])
+
+            if c is None:
+                c = Persona(id=contact["id"], _stub=True)
+
+            if c._stub is True:
+                request_list.append(contact["id"])
+
+            try:
+                # Old and new contact; remove from stale list
+                stale_contacts.remove(c)
+            except KeyError:
+                # New contact
+                self.contacts.append(c)
+                updated_contacts += 1
+
+        # Remove old contacts that are not new contacts
+        for contact in stale_contacts:
+            self.contacts.remove(contact)
+
+        logger.info("Updated {}'s contacts: {} added, {} removed, {} requested".format(
+            self.username, updated_contacts, len(stale_contacts), len(request_list)))
+
+        return request_list
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """See Serializable.update_from_changeset"""
@@ -725,109 +852,9 @@ class Persona(Identity):
         for req in request_list:
             request_objects.send(Persona.update_from_changeset, message=req)
 
-    def update_contacts(self, contact_list):
-        """Update Persona's contacts from a list of the new contacts
-
-        Args:
-            contact_list (list): List of dictionaries with keys:
-                id (String) -- 32 byte ID of the contact
-
-        Returns:
-            list: List of missing Persona IDs to be requested
-        """
-        updated_contacts = 0
-        request_list = list()
-
-        # stale_contacts contains all old contacts at first, all current
-        # contacts get then removed so that the remaining can get deleted
-        stale_contacts = set(self.contacts)
-
-        for contact in contact_list:
-            c = Persona.query.get(contact["id"])
-
-            if c is None:
-                c = Persona(id=contact["id"], _stub=True)
-
-            if c._stub is True:
-                request_list.append(contact["id"])
-
-            try:
-                # Old and new contact; remove from stale list
-                stale_contacts.remove(c)
-            except KeyError:
-                # New contact
-                self.contacts.append(c)
-                updated_contacts += 1
-
-        # Remove old contacts that are not new contacts
-        for contact in stale_contacts:
-            self.contacts.remove(contact)
-
-        logger.info("Updated {}'s contacts: {} added, {} removed, {} requested".format(
-            self.username, updated_contacts, len(stale_contacts), len(request_list)))
-
-        return request_list
-
     @property
     def user(self):
         return self.associations[0].user
-
-    def toggle_following_movement(self, movement):
-        """Toggle whether this Persona is following a movement.
-
-        Args:
-            movement (Movement): Movement entity to be (un)followed
-
-        Returns:
-            boolean -- True if the movement is now being followed, False if not
-        """
-        following = False
-
-        try:
-            self.movements_followed.remove(movement)
-            logger.info("{} is not following {} anymore".format(self, movement))
-        except ValueError:
-            self.movements_followed.append(movement)
-            following = True
-            logger.info("{} is now following {}".format(self, movement))
-
-        return following
-
-    def toggle_movement_membership(self, movement, role="member"):
-        """Toggle whether this Persona is member of a movement.
-
-        Also enables movement following for this Persona/Movement.
-
-        Args:
-            movement (Movement): Movement entity to be become member of
-            role (String): What role to take in the movement. May be "member"
-                or "admin"
-
-        Returns:
-            Updated MovementMemberAssociation object or None if it was deleted
-        """
-        if movement not in self.movements_followed:
-            logger.info("Setting {} to follow {}.".format(self, movement))
-            self.toggle_following_movement(movement)
-
-        gms = MovementMemberAssociation.query.filter_by(movement_id=movement.id). \
-            filter_by(persona_id=self.id).first()
-
-        if gms is None:
-            logger.info("Enabling membership of {} in {}".format(self, movement))
-            gms = MovementMemberAssociation(
-                persona=self,
-                movement_id=movement.id,
-                role=role,
-            )
-            rv = gms
-        else:
-            if self.id == movement.admin_id:
-                raise NotImplementedError("Admin can't leave the movement")
-            logger.info("Removing membership of {} in {}".format(self, movement))
-            gms.query.delete()
-            rv = None
-        return rv
 
 
 class Notification(db.Model):
@@ -853,14 +880,16 @@ class Notification(db.Model):
     }
 
     id = db.Column(db.Integer, primary_key=True)
-    text = db.Column(db.Text)
-    url = db.Column(db.Text)
-    source = db.Column(db.String(128))
-    domain = db.Column(db.String(128))
-    unread = db.Column(db.Boolean(), default=True)
-    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
-    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
 
+    created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    domain = db.Column(db.String(128))
+    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    source = db.Column(db.String(128))
+    text = db.Column(db.Text)
+    unread = db.Column(db.Boolean(), default=True)
+    url = db.Column(db.Text)
+
+    # Relations
     recipient = db.relationship('Identity',
         backref=db.backref('notifications', lazy="dynamic"))
     recipient_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
@@ -930,18 +959,29 @@ class Thought(Serializable, db.Model):
     _update_required = ["id", "text", "modified"]
 
     id = db.Column(db.String(32), primary_key=True)
-    text = db.Column(db.Text)
-    kind = db.Column(db.String(32))
-
+    context_length = db.Column(db.Integer, default=3)
     created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    kind = db.Column(db.String(32))
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
-
     state = db.Column(db.Integer, default=0)
+    text = db.Column(db.Text)
 
+    # Relations
     author = db.relationship('Identity',
         backref=db.backref('thoughts'),
         primaryjoin="identity.c.id==thought.c.author_id")
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
+
+    mindset = db.relationship('Mindset',
+        primaryjoin='mindset.c.id==thought.c.mindset_id',
+        backref=db.backref('index', lazy="dynamic"))
+    mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
+
+    parent = db.relationship('Thought',
+        primaryjoin='and_(remote(Thought.id)==Thought.parent_id, Thought.state>=0)',
+        backref=db.backref('children', lazy="dynamic"),
+        remote_side='Thought.id')
+    parent_id = db.Column(db.String(32), db.ForeignKey('thought.id'))
 
     percept_assocs = db.relationship("PerceptAssociation",
         backref="thought",
@@ -951,19 +991,6 @@ class Thought(Serializable, db.Model):
         secondary='thought_vesicles',
         primaryjoin='thought_vesicles.c.thought_id==thought.c.id',
         secondaryjoin='thought_vesicles.c.vesicle_id==vesicle.c.id')
-
-    context_length = db.Column(db.Integer, default=3)
-
-    parent = db.relationship('Thought',
-        primaryjoin='and_(remote(Thought.id)==Thought.parent_id, Thought.state>=0)',
-        backref=db.backref('children', lazy="dynamic"),
-        remote_side='Thought.id')
-    parent_id = db.Column(db.String(32), db.ForeignKey('thought.id'))
-
-    mindset = db.relationship('Mindset',
-        primaryjoin='mindset.c.id==thought.c.mindset_id',
-        backref=db.backref('index', lazy="dynamic"))
-    mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
 
     def __repr__(self):
         text = self.text.encode('utf-8')
@@ -982,7 +1009,10 @@ class Thought(Serializable, db.Model):
             Boolean: True if authorized
         """
         if Serializable.authorize(self, action, author_id=author_id):
-            return author_id == self.author.id
+            if isinstance(self.author, Movement):
+                return author_id == self.author.admin_id
+            else:
+                return author_id == self.author.id
         return False
 
     @property
@@ -998,10 +1028,6 @@ class Thought(Serializable, db.Model):
         rv["tag"] = pa.filter(Percept.kind == "tag").all()
 
         return rv
-
-    @property
-    def comments(self):
-        return self.children.filter_by(kind="thought")
 
     @classmethod
     def clone(cls, thought, author, mindset):
@@ -1035,8 +1061,17 @@ class Thought(Serializable, db.Model):
         return new_thought
 
     @property
-    def tags(self):
-        return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+    def comments(self):
+        return self.children.filter_by(kind="thought")
+
+    def comment_count(self):
+        """
+        Return the number of comemnts this Thought has receieved
+
+        Returns:
+            Int: Number of comments
+        """
+        return self.comments.filter_by(state=0).count()
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1114,6 +1149,180 @@ class Thought(Serializable, db.Model):
 
         return thought
 
+    @classmethod
+    def create_from_input(cls, text, author=None, longform=None,
+            longform_source=None, mindset=None, parent=None,
+            extract_percepts=True):
+        """Create a new Thought object from user input
+
+        Args:
+            text (String): Title text of the thought
+            author (Persona): Author of the Thought. If None, this is set to
+                the currently active persona
+            longform (String): Extended text of the Thought
+            mindset (Mindset): Optional context in which the Thought will be placed
+            parent (Thought): Optional parent to which this is a reply
+            extract_percepts (Booleand): Option for extracting percepts from
+                longform parameter
+
+        Returns:
+            dict: with keys
+                instance: The new Thought object
+                notifications: List of notification objects resulting from
+                    posting this Thought
+
+        Raises:
+            ValueError: For illegal parameter values or combinations thereof
+
+        """
+        thought_created = datetime.datetime.utcnow()
+        thought_id = uuid4().hex
+        notifications = list()
+        percepts = set()
+
+        if author is None:
+            if current_user.is_anonymous():
+                raise ValueError("Thought author can't be anonymous ({}).".format(
+                    author))
+            logger.info("Set new thought author to active persona")
+            author = current_user.active_persona
+
+        if mindset is not None and isinstance(mindset, Dialogue):
+            recipient = mindset.author if mindset.author is not author \
+                else mindset.other
+            notifications.append(DialogueNotification(
+                author=author, recipient=recipient))
+
+        instance = cls(
+            id=thought_id,
+            text=text,
+            author=author,
+            parent=parent,
+            created=thought_created,
+            modified=thought_created,
+            mindset=mindset)
+
+        if extract_percepts:
+            text, percepts = process_attachments(instance.text)
+            instance.text = text
+            logger.info("Extracted {} percepts from title".format(len(percepts)))
+
+            if longform and len(longform) > 0:
+                lftext, lfpercepts = process_attachments(longform)
+                percepts = percepts.union(lfpercepts)
+                logger.info("Extracted {} percepts from longform".format(len(percepts)))
+
+                lftext_percept = TextPercept.get_or_create(lftext,
+                    source=longform_source)
+                percepts.add(lftext_percept)
+                logger.info("Attached longform content")
+
+            for percept in percepts:
+                if isinstance(percept, Mention):
+                    notifications.append(MentionNotification(percept,
+                        author, url_for('web.thought', id=thought_id)))
+
+                assoc = PerceptAssociation(
+                    thought=instance, percept=percept, author=author)
+                instance.percept_assocs.append(assoc)
+                logger.info("Attached {} to new {}".format(percept, instance))
+
+        if parent and parent.author != author:
+            notifications.append(ReplyNotification(parent_thought=parent,
+                author=author, url=url_for('web.thought', id=thought_id)))
+
+        return {
+            "instance": instance,
+            "notifications": notifications
+        }
+
+    def export(self, exclude=[], include=None, update=False):
+        """See Serializable.export"""
+
+        ex = set(exclude + ["percepts", ])
+        data = Serializable.export(self, exclude=ex, include=include, update=update)
+
+        data["percept_assocs"] = list()
+        for percept_assoc in self.percept_assocs:
+            data["percept_assocs"].append({
+                "percept": percept_assoc.percept.export(),
+                "author_id": percept_assoc.author_id
+            })
+
+        return data
+
+    def get_absolute_url(self, mindset_id):
+        return url_for('web.thought', mindset_id=mindset_id, id=self.id)
+
+    def get_state(self):
+        """
+        Return publishing state of this thought.
+
+        Returns:
+            Integer:
+                -2 -- deleted
+                -1 -- unavailable
+                0 -- published
+                1 -- draft
+                2 -- private
+                3 -- updating
+        """
+        return THOUGHT_STATES[self.state][0]
+        return None
+
+    def has_text(self):
+        """Return True if this Thought has a TextPercept"""
+        try:
+            first = self.text_percepts()[0]
+        except IndexError:
+            first = None
+
+        return first is not None
+
+    def hot(self):
+        """i reddit"""
+        from math import log
+        # Uncomment to assign a score with analytics.score
+        # s = score(self)
+        s = self.upvote_count()
+        order = log(max(abs(s), 1), 10)
+        sign = 1 if s > 0 else -1 if s < 0 else 0
+        return round(order + sign * epoch_seconds(self.created) / 45000, 7)
+
+    def link_url(self):
+        """Return URL if this Thought has a Link-Percept
+
+        Returns:
+            String: URL of the first associated Link
+            Bool: False if no link was found
+        """
+        # percept_assoc = self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkPercept)).first()
+
+        for percept_assoc in self.percept_assocs:
+            if percept_assoc.percept.kind == "link":
+                return percept_assoc.percept.url
+
+    def set_state(self, new_state):
+        """
+        Set the publishing state of this thought
+
+        Parameters:
+            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
+
+        Raises:
+            ValueError: If new_state is not an Int or not a valid state of this object
+        """
+        new_state = int(new_state)
+        if new_state not in THOUGHT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid thought state").format(
+                new_state, type(new_state))
+        else:
+            self.state = new_state
+
+    @property
+    def tags(self):
+        return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a Thought from a changeset (See Serializable.update_from_changeset)"""
         # Update modified
@@ -1144,71 +1353,6 @@ class Thought(Serializable, db.Model):
 
         logger.info("Updated {} from changeset".format(self))
 
-    def export(self, exclude=[], include=None, update=False):
-        """See Serializable.export"""
-
-        ex = set(exclude + ["percepts", ])
-        data = Serializable.export(self, exclude=ex, include=include, update=update)
-
-        data["percept_assocs"] = list()
-        for percept_assoc in self.percept_assocs:
-            data["percept_assocs"].append({
-                "percept": percept_assoc.percept.export(),
-                "author_id": percept_assoc.author_id
-            })
-
-        return data
-
-    def get_state(self):
-        """
-        Return publishing state of this thought.
-
-        Returns:
-            Integer:
-                -2 -- deleted
-                -1 -- unavailable
-                0 -- published
-                1 -- draft
-                2 -- private
-                3 -- updating
-        """
-        return THOUGHT_STATES[self.state][0]
-
-    def set_state(self, new_state):
-        """
-        Set the publishing state of this thought
-
-        Parameters:
-            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
-
-        Raises:
-            ValueError: If new_state is not an Int or not a valid state of this object
-        """
-        new_state = int(new_state)
-        if new_state not in THOUGHT_STATES.keys():
-            raise ValueError("{} ({}) is not a valid thought state").format(
-                new_state, type(new_state))
-        else:
-            self.state = new_state
-
-    def get_absolute_url(self, mindset_id):
-        return url_for('web.thought', mindset_id=mindset_id, id=self.id)
-
-    def hot(self):
-        """i reddit"""
-        from math import log
-        # Uncomment to assign a score with analytics.score
-        # s = score(self)
-        s = self.upvote_count()
-        order = log(max(abs(s), 1), 10)
-        sign = 1 if s > 0 else -1 if s < 0 else 0
-        return round(order + sign * epoch_seconds(self.created) / 45000, 7)
-
-    @property
-    def upvotes(self):
-        """Returns a query for all upvotes, including disabled ones"""
-        return self.children.filter_by(kind="upvote")
-
     def upvoted(self):
         """
         Return True if active Persona has Upvoted this Thought
@@ -1221,6 +1365,11 @@ class Thought(Serializable, db.Model):
         else:
             return True
 
+    @property
+    def upvotes(self):
+        """Returns a query for all upvotes, including disabled ones"""
+        return self.children.filter_by(kind="upvote")
+
     @cache.memoize(timeout=10)
     def upvote_count(self):
         """
@@ -1231,14 +1380,9 @@ class Thought(Serializable, db.Model):
         """
         return self.upvotes.filter(Upvote.state >= 0).count()
 
-    def comment_count(self):
-        """
-        Return the number of comemnts this Thought has receieved
-
-        Returns:
-            Int: Number of comments
-        """
-        return self.comments.filter_by(state=0).count()
+    def text_percepts(self):
+        """Return TextPercepts of this Thought"""
+        return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
 
     def toggle_upvote(self, author_id=None):
         """
@@ -1284,43 +1428,18 @@ class Thought(Serializable, db.Model):
 
         return upvote
 
-    def link_url(self):
-        """Return URL if this Thought has a Link-Percept
-
-        Returns:
-            String: URL of the first associated Link
-            Bool: False if no link was found
-        """
-        # percept_assoc = self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkPercept)).first()
-
-        for percept_assoc in self.percept_assocs:
-            if percept_assoc.percept.kind == "link":
-                return percept_assoc.percept.url
-        return None
-
-    def has_text(self):
-        """Return True if this Thought has a TextPercept"""
-        try:
-            first = self.text_percepts()[0]
-        except IndexError:
-            first = None
-
-        return first is not None
-
-    def text_percepts(self):
-        """Return TextPercepts of this Thought"""
-        return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
-
 
 class PerceptAssociation(db.Model):
     """Associates Percepts with Thoughts, defining an author for the connection"""
 
     __tablename__ = 'percept_association'
-    thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
+
     percept_id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-    percept = db.relationship("Percept", backref="thought_assocs")
+    thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
+
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
     author = db.relationship("Identity", backref="percept_assocs")
+    percept = db.relationship("Percept", backref="thought_assocs")
 
     @classmethod
     def validate_changeset(cls, changeset):
@@ -1350,30 +1469,60 @@ class Percept(Serializable, db.Model):
 
     __tablename__ = 'percept'
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'percept',
+        'polymorphic_on': "kind"
+    }
+
     _insert_required = ["id", "title", "created", "modified", "source", "kind"]
     _update_required = ["id", "title", "modified", "source"]
 
     id = db.Column(db.String(32), primary_key=True)
-    title = db.Column(db.Text)
-    kind = db.Column(db.String(32))
+
     created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    kind = db.Column(db.String(32))
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     source = db.Column(db.String(128))
     state = db.Column(db.Integer, default=0)
+    title = db.Column(db.Text)
 
+    # Relations
     vesicles = db.relationship(
         'Vesicle',
         secondary='percept_vesicles',
         primaryjoin='percept_vesicles.c.percept_id==percept.c.id',
         secondaryjoin='percept_vesicles.c.vesicle_id==vesicle.c.id')
 
-    __mapper_args__ = {
-        'polymorphic_identity': 'percept',
-        'polymorphic_on': kind
-    }
-
     def __repr__(self):
         return "<Percept:{} [{}]>".format(self.kind, self.id[:6])
+
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
+        created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
+        modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
+
+        if stub is not None:
+            if not isinstance(stub, Percept):
+                raise ValueError("Invalid stub of type {}".format(type(stub)))
+
+            new_percept = stub
+            new_percept.id = changeset["id"]
+            new_percept.title = changeset["title"]
+            new_percept.source = changeset["source"]
+            new_percept.created = created_dt
+            new_percept.modified = modified_dt
+        else:
+            new_percept = Percept(
+                id=changeset["id"],
+                title=changeset["title"],
+                created=created_dt,
+                modified=modified_dt,
+                source=changeset["source"]
+            )
+
+        logger.info("Created new {} from changeset".format(new_percept))
+        return new_percept
 
     def get_state(self):
         """
@@ -1407,34 +1556,6 @@ class Percept(Serializable, db.Model):
         else:
             self.state = new_state
 
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
-        created_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
-        modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
-
-        if stub is not None:
-            if not isinstance(stub, Percept):
-                raise ValueError("Invalid stub of type {}".format(type(stub)))
-
-            new_percept = stub
-            new_percept.id = changeset["id"]
-            new_percept.title = changeset["title"]
-            new_percept.source = changeset["source"]
-            new_percept.created = created_dt
-            new_percept.modified = modified_dt
-        else:
-            new_percept = Percept(
-                id=changeset["id"],
-                title=changeset["title"],
-                created=created_dt,
-                modified=modified_dt,
-                source=changeset["source"]
-            )
-
-        logger.info("Created new {} from changeset".format(new_percept))
-        return new_percept
-
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
@@ -1450,6 +1571,7 @@ class Tag(Serializable, db.Model):
     __tablename__ = "tag"
 
     id = db.Column(db.String(32), primary_key=True)
+
     name = db.Column(db.String(32))
 
     @classmethod
@@ -1474,6 +1596,8 @@ class TagPercept(Percept):
     _update_required = ["id", "modified"]
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
+    # Relations
     tag_id = db.Column(db.String(32), db.ForeignKey('tag.id'))
     tag = db.relationship('Tag', backref="synonyms")
 
@@ -1514,9 +1638,11 @@ class Mention(Percept):
     _update_required = ["id", "modified"]
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
+    text = db.Column(db.String(80))
+
     identity_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
     identity = db.relationship('Identity', backref="mentions")
-    text = db.Column(db.String(80))
 
     def __init__(self, *args, **kwargs):
         Percept.__init__(self, *args, **kwargs)
@@ -1569,17 +1695,16 @@ class Mention(Percept):
 class LinkedPicturePercept(Percept):
     """A linked picture attachment"""
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'linkedpicture'
+    }
+
     _insert_required = ["id", "title", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-    url = db.Column(db.Text)
-    # width = db.Column(db.Integer, default=0)
-    # height = db.Column(db.Integer, default=0)
 
-    __mapper_args__ = {
-        'polymorphic_identity': 'linkedpicture'
-    }
+    url = db.Column(db.Text)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1632,15 +1757,47 @@ class LinkedPicturePercept(Percept):
 class LinkPercept(Percept):
     """A URL attachment"""
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'link'
+    }
+
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "url", "kind"]
     _update_required = ["id", "title", "modified", "source", "url"]
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     url = db.Column(db.Text)
 
-    __mapper_args__ = {
-        'polymorphic_identity': 'link'
-    }
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
+        if stub is None:
+            stub = LinkPercept()
+
+        new_percept = Percept.create_from_changeset(changeset,
+            stub=stub, update_sender=update_sender, update_recipient=update_recipient)
+
+        new_percept.url = changeset["url"]
+
+        return new_percept
+
+    def favicon_url(self):
+        """Return the URL of this Percept's domain favicon
+
+        Returns:
+            string: URL of the favicon as a 32 pixel image"""
+
+        # Taken from http://stackoverflow.com/questions/9626535/get-domain-name-from-url/9626596#9626596
+
+        from urlparse import urlparse
+
+        parsed_uri = urlparse(self.url)
+        try:
+            domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+        except AttributeError, e:
+            logger.warning("Error retrieving domain for {}: {}".format(self, e))
+        else:
+            return "http://grabicon.com/icon?domain={}".format(domain)
 
     @classmethod
     def get_or_create(cls, url, title=None):
@@ -1665,19 +1822,6 @@ class LinkPercept(Percept):
 
         return inst
 
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
-        if stub is None:
-            stub = LinkPercept()
-
-        new_percept = Percept.create_from_changeset(changeset,
-            stub=stub, update_sender=update_sender, update_recipient=update_recipient)
-
-        new_percept.url = changeset["url"]
-
-        return new_percept
-
     def iframe_url(self):
         """Return a URL to embed within an iframe if this link's domain provides such
 
@@ -1699,24 +1843,6 @@ class LinkPercept(Percept):
 
         return rv
 
-    def favicon_url(self):
-        """Return the URL of this Percept's domain favicon
-
-        Returns:
-            string: URL of the favicon as a 32 pixel image"""
-
-        # Taken from http://stackoverflow.com/questions/9626535/get-domain-name-from-url/9626596#9626596
-
-        from urlparse import urlparse
-
-        parsed_uri = urlparse(self.url)
-        try:
-            domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
-        except AttributeError, e:
-            logger.warning("Error retrieving domain for {}: {}".format(self, e))
-        else:
-            return "http://grabicon.com/icon?domain={}".format(domain)
-
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
         raise NotImplementedError
@@ -1725,15 +1851,29 @@ class LinkPercept(Percept):
 class TextPercept(Percept):
     """A longform text attachment"""
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'text'
+    }
+
     _insert_required = ["id", "title", "kind", "created", "modified", "source", "text", "kind"]
     _update_required = ["id", "title", "modified", "source", "text"]
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     text = db.Column(db.Text)
 
-    __mapper_args__ = {
-        'polymorphic_identity': 'text'
-    }
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
+        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
+        if stub is None:
+            stub = TextPercept()
+
+        new_percept = Percept.create_from_changeset(changeset,
+            stub=stub, update_sender=update_sender, update_recipient=update_recipient)
+
+        new_percept.text = changeset["text"]
+
+        return new_percept
 
     @classmethod
     def get_or_create(cls, text, source=None):
@@ -1755,23 +1895,6 @@ class TextPercept(Percept):
 
         return percept
 
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
-        """Create a new Percept object from a changeset (See Serializable.create_from_changeset). """
-        if stub is None:
-            stub = TextPercept()
-
-        new_percept = Percept.create_from_changeset(changeset,
-            stub=stub, update_sender=update_sender, update_recipient=update_recipient)
-
-        new_percept.text = changeset["text"]
-
-        return new_percept
-
-    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
-        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
-        raise NotImplementedError
-
     def reading_time(self):
         """Return an estimate for reading time based on 200 words per minute
 
@@ -1781,16 +1904,20 @@ class TextPercept(Percept):
         word_count = len(self.text.split(" "))
         return datetime.timedelta(minutes=int(word_count / 200))
 
+    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
+        """Update a new Percept object from a changeset (See Serializable.update_from_changeset). """
+        raise NotImplementedError
+
 
 class Upvote(Thought):
     """A Upvote is a vote that signals interest in its parent Thought"""
 
-    _insert_required = ["id", "created", "modified", "author_id", "parent_id", "state"]
-    _update_required = ["id", "modified", "state"]
-
     __mapper_args__ = {
         'polymorphic_identity': 'upvote'
     }
+
+    _insert_required = ["id", "created", "modified", "author_id", "parent_id", "state"]
+    _update_required = ["id", "modified", "state"]
 
     def __repr__(self):
         if ["author_id", "parent_id"] in dir(self):
@@ -1798,35 +1925,6 @@ class Upvote(Thought):
                 self.author_id[:6], self.parent_id[:6], self.get_state())
         else:
             return "<Upvote ({})>".format(self.get_state())
-
-    def get_state(self):
-        """
-        Return publishing state of this Upvote.
-
-        Returns:
-            Integer:
-                -1 -- (disabled)
-                 0 -- (active)
-                 1 -- (unknown author)
-        """
-        return UPVOTE_STATES[self.state][0]
-
-    def set_state(self, new_state):
-        """
-        Set the publishing state of this Upvote
-
-        Parameters:
-            new_state (int) code of the new state as defined in nucleus.UPVOTE_STATES
-
-        Raises:
-            ValueError: If new_state is not an Int or not a valid state of this object
-        """
-        new_state = int(new_state)
-        if new_state not in UPVOTE_STATES.keys():
-            raise ValueError("{} ({}) is not a valid Upvote state".format(
-                new_state, type(new_state)))
-        else:
-            self.state = new_state
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1870,6 +1968,35 @@ class Upvote(Thought):
 
         return upvote
 
+    def get_state(self):
+        """
+        Return publishing state of this Upvote.
+
+        Returns:
+            Integer:
+                -1 -- (disabled)
+                 0 -- (active)
+                 1 -- (unknown author)
+        """
+        return UPVOTE_STATES[self.state][0]
+
+    def set_state(self, new_state):
+        """
+        Set the publishing state of this Upvote
+
+        Parameters:
+            new_state (int) code of the new state as defined in nucleus.UPVOTE_STATES
+
+        Raises:
+            ValueError: If new_state is not an Int or not a valid state of this object
+        """
+        new_state = int(new_state)
+        if new_state not in UPVOTE_STATES.keys():
+            raise ValueError("{} ({}) is not a valid Upvote state".format(
+                new_state, type(new_state)))
+        else:
+            self.state = new_state
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a new Upvote object from a changeset (See Serializable.update_from_changeset). """
         modified_dt = iso8601.parse_date(changeset["modified"]).replace(tzinfo=None)
@@ -1886,6 +2013,8 @@ class Souma(Serializable, db.Model):
     __tablename__ = "souma"
 
     _insert_required = ["id", "modified", "crypt_public", "sign_public", "mindset_id"]
+    _version_string = db.Column(db.String(32), default="")
+
     id = db.Column(db.String(32), primary_key=True)
 
     crypt_private = db.Column(db.Text)
@@ -1893,25 +2022,12 @@ class Souma(Serializable, db.Model):
     sign_private = db.Column(db.Text)
     sign_public = db.Column(db.Text)
 
+    # Relations
     mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     mindset = db.relationship('Mindset')
 
-    _version_string = db.Column(db.String(32), default="")
-
     def __str__(self):
         return "<Souma [{}]>".format(self.id[:6])
-
-    def authorize(self, action, author_id=None):
-        """Return True if this Souma authorizes `action` for `author_id`
-
-        Args:
-            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
-            author_id (String): Persona ID that wants to perform the action
-
-        Returns:
-            Boolean: True if authorized
-        """
-        return False
 
     def authentic_request(self, request):
         """Validate whether a request carries a valid authentication
@@ -1937,6 +2053,18 @@ class Souma(Serializable, db.Model):
         #         Payload: {} ({} bytes)
         #         Authentication: {} ({} bytes)""".format(request, str(self.id), b64encode(glia_rand), url, request.data[:400], len(request.data), glia_auth[:8], len(glia_auth)))
 
+    def authorize(self, action, author_id=None):
+        """Return True if this Souma authorizes `action` for `author_id`
+
+        Args:
+            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
+            author_id (String): Persona ID that wants to perform the action
+
+        Returns:
+            Boolean: True if authorized
+        """
+        return False
+
     def generate_keys(self):
         """ Generate new RSA keypairs for signing and encrypting. Commit to DB afterwards! """
 
@@ -1949,15 +2077,6 @@ class Souma(Serializable, db.Model):
         self.crypt_private = str(rsa2)
         self.crypt_public = str(rsa2.public_key)
 
-    def encrypt(self, data):
-        """ Encrypt data using RSA """
-
-        if self.crypt_public == "":
-            raise ValueError("Error encrypting: No public encryption key found for {}".format(self))
-
-        key_public = RsaPublicKey.Read(self.crypt_public)
-        return key_public.Encrypt(data)
-
     def decrypt(self, cypher):
         """ Decrypt cyphertext using RSA """
 
@@ -1967,16 +2086,14 @@ class Souma(Serializable, db.Model):
         key_private = RsaPrivateKey.Read(self.crypt_private)
         return key_private.Decrypt(cypher)
 
-    @property
-    def version(self):
-        """Return semantic version object for this Souma"""
-        if not hasattr(self, "_version_string"):
-            return None
-        return semantic_version.Version(self._version_string)
+    def encrypt(self, data):
+        """ Encrypt data using RSA """
 
-    @version.setter
-    def version(self, value):
-        self._version_string = str(semantic_version.Version(value))
+        if self.crypt_public == "":
+            raise ValueError("Error encrypting: No public encryption key found for {}".format(self))
+
+        key_public = RsaPublicKey.Read(self.crypt_public)
+        return key_public.Encrypt(data)
 
     def sign(self, data):
         """ Sign data using RSA """
@@ -1988,6 +2105,17 @@ class Souma(Serializable, db.Model):
         key_private = RsaPrivateKey.Read(self.sign_private)
         signature = key_private.Sign(data)
         return urlsafe_b64encode(signature)
+
+    @property
+    def version(self):
+        """Return semantic version object for this Souma"""
+        if not hasattr(self, "_version_string"):
+            return None
+        return semantic_version.Version(self._version_string)
+
+    @version.setter
+    def version(self, value):
+        self._version_string = str(semantic_version.Version(value))
 
     def verify(self, data, signature_b64):
         """ Verify a signature using RSA """
@@ -2021,14 +2149,13 @@ class Mindset(Serializable, db.Model):
         vesicles: List of Vesicles that describe this Mindset
     """
     __tablename__ = 'mindset'
-
-    _insert_required = ["id", "modified", "author_id", "kind", "state"]
-    _update_required = ["id", "modified", "index"]
-
     __mapper_args__ = {
         'polymorphic_identity': 'mindset',
         'polymorphic_on': 'kind'
     }
+
+    _insert_required = ["id", "modified", "author_id", "kind", "state"]
+    _update_required = ["id", "modified", "index"]
 
     id = db.Column(db.String(32), primary_key=True)
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
@@ -2057,11 +2184,11 @@ class Mindset(Serializable, db.Model):
         """
         return (key in self.index)
 
-    def __repr__(self):
-        return "<{} [{}]>".format(self.name, self.id[:6])
-
     def __len__(self):
         return self.index.paginate(1).total
+
+    def __repr__(self):
+        return "<{} [{}]>".format(self.name, self.id[:6])
 
     def authorize(self, action, author_id=None):
         """Return True if this Mindset authorizes `action` for `author_id`
@@ -2089,66 +2216,6 @@ class Mindset(Serializable, db.Model):
                 p = Persona.query.filter(Persona.index_id == self.id)
                 return p.id == author_id
         return False
-
-    def get_state(self):
-        """
-        Return publishing state of this thought.
-
-        Returns:
-            Integer:
-                -2 -- deleted
-                -1 -- unavailable
-                0 -- published
-                1 -- draft
-                2 -- private
-                3 -- updating
-        """
-        return THOUGHT_STATES[self.state][0]
-
-    def set_state(self, new_state):
-        """
-        Set the publishing state of this thought
-
-        Parameters:
-            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
-
-        Raises:
-            ValueError: If new_state is not an Int or not a valid state of this object
-        """
-        new_state = int(new_state)
-        if new_state not in THOUGHT_STATES.keys():
-            raise ValueError("{} ({}) is not a valid thought state").format(
-                new_state, type(new_state))
-        else:
-            self.state = new_state
-
-    def get_absolute_url(self):
-        """Return URL for this Mindset depending on kind"""
-        raise NotImplementedError("Base Mindset doesn't have its own URL scheme")
-
-    def export(self, exclude=[], include=None, update=False):
-        ex = set(exclude + ["index", ])
-        data = Serializable.export(self, exclude=ex, include=include, update=update)
-
-        data["index"] = list()
-        for thought in self.index.filter('Thought.state >= 0'):
-            data["index"].append({
-                "id": thought.id,
-                "modified": thought.modified.isoformat(),
-                "author_id": thought.author.id
-            })
-
-        return data
-
-    @property
-    def name(self):
-        """Return an identifier for this Mindset that can be used in UI
-
-        Returns:
-            string: Name for this Mindset
-        """
-        rv = "Mindset by {}".format(self.author.username)
-        return rv
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -2224,6 +2291,66 @@ class Mindset(Serializable, db.Model):
 
         return new_mindset
 
+    def export(self, exclude=[], include=None, update=False):
+        ex = set(exclude + ["index", ])
+        data = Serializable.export(self, exclude=ex, include=include, update=update)
+
+        data["index"] = list()
+        for thought in self.index.filter('Thought.state >= 0'):
+            data["index"].append({
+                "id": thought.id,
+                "modified": thought.modified.isoformat(),
+                "author_id": thought.author.id
+            })
+
+        return data
+
+    def get_absolute_url(self):
+        """Return URL for this Mindset depending on kind"""
+        raise NotImplementedError("Base Mindset doesn't have its own URL scheme")
+
+    def get_state(self):
+        """
+        Return publishing state of this thought.
+
+        Returns:
+            Integer:
+                -2 -- deleted
+                -1 -- unavailable
+                0 -- published
+                1 -- draft
+                2 -- private
+                3 -- updating
+        """
+        return THOUGHT_STATES[self.state][0]
+
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        rv = "Mindset by {}".format(self.author.username)
+        return rv
+
+    def set_state(self, new_state):
+        """
+        Set the publishing state of this thought
+
+        Parameters:
+            new_state (int) code of the new state as defined in nucleus.THOUGHT_STATES
+
+        Raises:
+            ValueError: If new_state is not an Int or not a valid state of this object
+        """
+        new_state = int(new_state)
+        if new_state not in THOUGHT_STATES.keys():
+            raise ValueError("{} ({}) is not a valid thought state").format(
+                new_state, type(new_state))
+        else:
+            self.state = new_state
+
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update the Mindset's index using a changeset
 
@@ -2286,18 +2413,10 @@ class Mindset(Serializable, db.Model):
 
 class Mindspace(Mindset):
     """Model internal thoughts of an Identity"""
+
     __mapper_args__ = {
         'polymorphic_identity': 'mindspace'
     }
-
-    @property
-    def name(self):
-        """Return an identifier for this Mindset that can be used in UI
-
-        Returns:
-            string: Name for this Mindset
-        """
-        return "{} mindspace".format(self.author.username)
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -2316,14 +2435,6 @@ class Mindspace(Mindset):
 
         return rv
 
-
-class Blog(Mindset):
-    """Model external communication of an identity"""
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'blog'
-    }
-
     @property
     def name(self):
         """Return an identifier for this Mindset that can be used in UI
@@ -2331,7 +2442,15 @@ class Blog(Mindset):
         Returns:
             string: Name for this Mindset
         """
-        return "{} blog".format(self.author.username)
+        return "{} mindspace".format(self.author.username)
+
+
+class Blog(Mindset):
+    """Model external communication of an identity"""
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'blog'
+    }
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -2350,6 +2469,15 @@ class Blog(Mindset):
 
         return rv
 
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        return "{} blog".format(self.author.username)
+
 
 class Dialogue(Mindset):
     """Model a private conversation between two parties"""
@@ -2362,23 +2490,6 @@ class Dialogue(Mindset):
         primaryjoin="identity.c.id==mindset.c.other_id")
     other_id = db.Column(db.String(32), db.ForeignKey(
         'identity.id', use_alter=True, name="fk_dialogue_other"))
-
-    @property
-    def name(self):
-        """Return an identifier for this Mindset that can be used in UI
-
-        Returns:
-            string: Name for this Mindset
-        """
-        if not current_user.is_anonymous():
-            if current_user.active_persona == self.author:
-                rv = "Dialogue with {}".format(self.other.username)
-            elif current_user.active_persona == self.other:
-                rv = "Dialogue with {}".format(self.author.username)
-        else:
-            rv = "Private Dialogue"
-
-        return rv
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -2420,21 +2531,39 @@ class Dialogue(Mindset):
 
         return rv
 
+    @property
+    def name(self):
+        """Return an identifier for this Mindset that can be used in UI
+
+        Returns:
+            string: Name for this Mindset
+        """
+        if not current_user.is_anonymous():
+            if current_user.active_persona == self.author:
+                rv = "Dialogue with {}".format(self.other.username)
+            elif current_user.active_persona == self.other:
+                rv = "Dialogue with {}".format(self.author.username)
+        else:
+            rv = "Private Dialogue"
+
+        return rv
+
 
 class MovementMemberAssociation(db.Model):
     """Associates Personas with Movements"""
 
     __tablename__ = 'movementmember_association'
+
     movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'), primary_key=True)
     persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
     persona = db.relationship("Persona", backref="movement_assocs")
 
     # Role may be either 'admin' or 'member'
-    role = db.Column(db.String(16), default="member")
+    active = db.Column(db.Boolean, default=True)
     created = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     description = db.Column(db.Text)
-    active = db.Column(db.Boolean, default=True)
     last_seen = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    role = db.Column(db.String(16), default="member")
 
 
 t_members = db.Table(
@@ -2467,10 +2596,11 @@ class Movement(Identity):
     _update_required = Identity._update_required + ["state"]
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
-    description = db.Column(db.Text)
 
+    description = db.Column(db.Text)
     state = db.Column(db.Integer, default=0)
 
+    # Relations
     admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
     admin = db.relationship("Persona", primaryjoin="persona.c.id==movement.c.admin_id")
 
@@ -2526,6 +2656,57 @@ class Movement(Identity):
     def contacts(self):
         """Alias for Movememt.members for compatibility with Persona class"""
         return self.members
+
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None, request_sources=True):
+        """Create a new movement from changeset"""
+        movement = Identity.create_from_changeset(changeset,
+            stub=stub,
+            update_sender=update_sender,
+            update_recipient=update_recipient,
+            kind=Movement,
+            request_sources=request_sources)
+
+        movement.description = changeset["description"]
+
+        if "state" in changeset:
+            movement.set_state(changeset["state"])
+
+        request_list = list()
+
+        # Update admin
+        admin = Persona.query.get(changeset["admin_id"])
+        if admin is None or admin._stub:
+            request_list.append({
+                "type": "Persona",
+                "id": changeset["admin_id"],
+                "author_id": update_recipient.id if update_recipient else None,
+                "recipient_id": update_sender.id if update_sender else None,
+            })
+
+        if admin is None:
+            admin = Persona(
+                id=changeset["admin_id"],
+            )
+            admin._stub = True
+
+        movement.admin = admin
+
+        if "members" in changeset:
+            mc = movement.update_members(changeset["members"])
+            for m in mc:
+                request_list.append({
+                    "type": "Persona",
+                    "id": m,
+                    "author_id": update_recipient.id if update_recipient else None,
+                    "recipient_id": update_sender.id if update_sender else None,
+                })
+
+        if request_sources:
+            for req in request_list:
+                request_objects.send(Movement.create_from_changeset, message=req)
+
+        return movement
 
     def current_role(self):
         """Return role of the currently active Persona
@@ -2611,103 +2792,6 @@ class Movement(Identity):
         else:
             self.state = new_state
 
-    def update_members(self, new_member_list):
-        """Update Movements's members from a list of the new members.
-
-        This method may only be used with an authoritative list of movement
-        members (i.e. from the movement admin).
-
-        Args:
-            new_member_list (list): List of dictionaries with keys:
-                id (String) -- 32 byte ID of the member
-
-        Returns:
-            list: List of missing Persona IDs to be requested
-        """
-        updated_members = 0
-        request_list = list()
-
-        # stale_members contains all old members at first, all current
-        # members get then removed so that the remaining can get deleted
-        stale_members = set(self.members)
-
-        for member in new_member_list:
-            m = Persona.query.get(member["id"])
-
-            if m is None:
-                m = Persona(id=member["id"], _stub=True)
-
-            if m._stub is True:
-                request_list.append(member["id"])
-
-            try:
-                # Old and new member; remove from stale list
-                stale_members.remove(m)
-            except KeyError:
-                # New member
-                self.members.append(m)
-                updated_members += 1
-
-        # Remove old members that are not new members
-        for member in stale_members:
-            self.members.remove(member)
-
-        logger.info("Updated {}'s members: {} added, {} removed, {} requested".format(
-            self.username, updated_members, len(stale_members), len(request_list)))
-
-        return request_list
-
-    @staticmethod
-    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None, request_sources=True):
-        """Create a new movement from changeset"""
-        movement = Identity.create_from_changeset(changeset,
-            stub=stub,
-            update_sender=update_sender,
-            update_recipient=update_recipient,
-            kind=Movement,
-            request_sources=request_sources)
-
-        movement.description = changeset["description"]
-
-        if "state" in changeset:
-            movement.set_state(changeset["state"])
-
-        request_list = list()
-
-        # Update admin
-        admin = Persona.query.get(changeset["admin_id"])
-        if admin is None or admin._stub:
-            request_list.append({
-                "type": "Persona",
-                "id": changeset["admin_id"],
-                "author_id": update_recipient.id if update_recipient else None,
-                "recipient_id": update_sender.id if update_sender else None,
-            })
-
-        if admin is None:
-            admin = Persona(
-                id=changeset["admin_id"],
-            )
-            admin._stub = True
-
-        movement.admin = admin
-
-        if "members" in changeset:
-            mc = movement.update_members(changeset["members"])
-            for m in mc:
-                request_list.append({
-                    "type": "Persona",
-                    "id": m,
-                    "author_id": update_recipient.id if update_recipient else None,
-                    "recipient_id": update_sender.id if update_sender else None,
-                })
-
-        if request_sources:
-            for req in request_list:
-                request_objects.send(Movement.create_from_changeset, message=req)
-
-        return movement
-
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update movement. See Serializable.update_from_changeset"""
         Identity.update_from_changeset(self, changeset,
@@ -2755,3 +2839,49 @@ class Movement(Identity):
 
         for req in request_list:
             request_objects.send(Movement.update_from_changeset, message=req)
+
+    def update_members(self, new_member_list):
+        """Update Movements's members from a list of the new members.
+
+        This method may only be used with an authoritative list of movement
+        members (i.e. from the movement admin).
+
+        Args:
+            new_member_list (list): List of dictionaries with keys:
+                id (String) -- 32 byte ID of the member
+
+        Returns:
+            list: List of missing Persona IDs to be requested
+        """
+        updated_members = 0
+        request_list = list()
+
+        # stale_members contains all old members at first, all current
+        # members get then removed so that the remaining can get deleted
+        stale_members = set(self.members)
+
+        for member in new_member_list:
+            m = Persona.query.get(member["id"])
+
+            if m is None:
+                m = Persona(id=member["id"], _stub=True)
+
+            if m._stub is True:
+                request_list.append(member["id"])
+
+            try:
+                # Old and new member; remove from stale list
+                stale_members.remove(m)
+            except KeyError:
+                # New member
+                self.members.append(m)
+                updated_members += 1
+
+        # Remove old members that are not new members
+        for member in stale_members:
+            self.members.remove(member)
+
+        logger.info("Updated {}'s members: {} added, {} removed, {} requested".format(
+            self.username, updated_members, len(stale_members), len(request_list)))
+
+        return request_list
