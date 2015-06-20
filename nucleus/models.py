@@ -474,6 +474,22 @@ class Identity(Serializable, db.Model):
         for req in request_list:
             request_objects.send(Identity.create_from_changeset, message=req)
 
+    def has_blogged(self, thought):
+        """Return True if this Identity has blogged thought
+
+        When a post is blogged, the blog post is created as a reply to the
+        original post, hence this is checking whether this Identity has replied
+        to the thought on its blog
+
+        Args:
+            thought (Thought): Thought to check
+        """
+        count = self.blog.index \
+            .filter(Thought.parent == thought) \
+            .filter(Thought.author == self) \
+            .count()
+        return count > 0
+
 #
 # Setup follower relationship on Persona objects
 #
