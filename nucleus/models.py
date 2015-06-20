@@ -1000,7 +1000,10 @@ class Thought(Serializable, db.Model):
             Boolean: True if authorized
         """
         if Serializable.authorize(self, action, author_id=author_id):
-            return author_id == self.author.id
+            if isinstance(self.author, Movement):
+                return author_id == self.author.admin_id
+            else:
+                return author_id == self.author.id
         return False
 
     @property
