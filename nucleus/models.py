@@ -979,6 +979,7 @@ class Thought(Serializable, db.Model):
     modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     state = db.Column(db.Integer, default=0)
     text = db.Column(db.Text)
+    posted_from = db.Column(db.String(64))
 
     # Relations
     author = db.relationship('Identity',
