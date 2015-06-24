@@ -2614,6 +2614,7 @@ class Movement(Identity):
 
     description = db.Column(db.Text)
     state = db.Column(db.Integer, default=0)
+    private = db.Column(db.Boolean(), default=False)
 
     # Relations
     admin_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
