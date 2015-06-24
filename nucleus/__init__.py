@@ -60,7 +60,7 @@ ALLOWED_COLORS = {
     'ef3054': "Bright pink"
 }
 
-CHANGE_TYPES = ("insert", "update", "delete")
+CHANGE_TYPES = ("insert", "read", "update", "delete")
 
 ATTACHMENT_KINDS = ("link", "linkedpicture", "text")
 
