@@ -2743,6 +2743,10 @@ class Movement(Identity):
 
         return data
 
+    def get_absolute_url(self):
+        """Return URL for this movement's mindspace page"""
+        return url_for("web.movement", id=self.id)
+
     def get_state(self):
         """
         Return publishing state of this Movement. (temporarily uses percept states)
