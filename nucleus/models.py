@@ -2462,7 +2462,7 @@ class Blog(Mindset):
 
         elif isinstance(self.author, Persona):
             p = Persona.query.filter(Persona.blog_id == self.id).first()
-            rv = url_for("web.persona", id=p.id)
+            rv = url_for("web.persona_blog", id=p.id)
 
         else:
             raise NotImplementedError("Blog with unknown author kind has no URL")
