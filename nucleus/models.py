@@ -2665,7 +2665,16 @@ class Movement(Identity):
             Boolean: True if authorized
         """
         if Serializable.authorize(self, action, author_id=author_id):
-            return self.admin_id == author_id
+            if action == "read" and self.private:
+                member = MovementMemberAssociation.query \
+                    .filter_by(movement=self) \
+                    .filter_by(active=True) \
+                    .filter_by(persona_id=author_id) \
+                    .first()
+
+                return member is not None
+            else:
+                return self.admin_id == author_id
         return False
 
     @property
