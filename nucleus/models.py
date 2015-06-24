@@ -291,6 +291,11 @@ class Identity(Serializable, db.Model):
     mindspace_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     mindspace = db.relationship('Mindset', primaryjoin='mindset.c.id==identity.c.mindspace_id')
 
+    blogs_followed = db.relationship('Identity',
+        secondary='blogs_followed',
+        primaryjoin='blogs_followed.c.follower_id==identity.c.id',
+        secondaryjoin='blogs_followed.c.followee_id==identity.c.id')
+
     vesicles = db.relationship(
         'Vesicle',
         secondary='identity_vesicles',
@@ -508,9 +513,9 @@ t_contacts = db.Table('contacts',
     db.UniqueConstraint('left_id', 'right_id', name='_uc_contacts')
 )
 
-t_movements_followed = db.Table('movements_followed',
-    db.Column('persona_id', db.String(32), db.ForeignKey('persona.id')),
-    db.Column('movement_id', db.String(32), db.ForeignKey('movement.id'))
+t_blogs_followed = db.Table('blogs_followed',
+    db.Column('follower_id', db.String(32), db.ForeignKey('identity.id')),
+    db.Column('followee_id', db.String(32), db.ForeignKey('identity.id'))
 )
 
 
@@ -550,11 +555,6 @@ class Persona(Identity):
 
     index_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     index = db.relationship('Mindset', primaryjoin='mindset.c.id==persona.c.index_id')
-
-    movements_followed = db.relationship('Movement',
-        secondary='movements_followed',
-        primaryjoin='movements_followed.c.persona_id==persona.c.id',
-        secondaryjoin='movements_followed.c.movement_id==movement.c.id')
 
     def __repr__(self):
         try:
@@ -614,7 +614,7 @@ class Persona(Identity):
             })
 
         # Request unknown movements
-        movements_to_check = set(changeset["movements"] + changeset["movements_followed"])
+        movements_to_check = set(changeset["movements"] + changeset["blogs_followed"])
         for movement_info in movements_to_check:
             movement = Movement.query.get(movement_info["id"])
             if movement is None:
@@ -634,7 +634,7 @@ class Persona(Identity):
         return p
 
     def export(self, exclude=[], include=None, update=False):
-        exclude = set(exclude + ["contacts", "movements", "movements_followed"])
+        exclude = set(exclude + ["contacts", "movements", "blogs_followed"])
         data = Identity.export(self, exclude=exclude, include=include, update=update)
 
         data["contacts"] = list()
@@ -649,10 +649,10 @@ class Persona(Identity):
                 "id": movement.id,
             })
 
-        data["movements_followed"] = list()
-        for movement in self.movements_followed:
-            data["movements_followed"].append({
-                "id": movement.id
+        data["blogs_followed"] = list()
+        for ident in self.blogs_followed:
+            data["blogs_followed"].append({
+                "id": ident.id
             })
 
         return data
@@ -688,24 +688,24 @@ class Persona(Identity):
     def timeout(self):
         return self.last_connected + current_app.config['SESSION_EXPIRATION_TIME']
 
-    def toggle_following_movement(self, movement):
-        """Toggle whether this Persona is following a movement.
+    def toggle_following(self, ident):
+        """Toggle whether this Persona is following a blog.
 
         Args:
-            movement (Movement): Movement entity to be (un)followed
+            ident (Identity): Whose blog to follow/unfollow
 
         Returns:
-            boolean -- True if the movement is now being followed, False if not
+            boolean -- True if the blog is now being followed, False if not
         """
         following = False
 
         try:
-            self.movements_followed.remove(movement)
-            logger.info("{} is not following {} anymore".format(self, movement))
+            self.blogs_followed.remove(ident)
+            logger.info("{} is not following {} anymore".format(self, ident))
         except ValueError:
-            self.movements_followed.append(movement)
+            self.blogs_followed.append(ident)
             following = True
-            logger.info("{} is now following {}".format(self, movement))
+            logger.info("{} is now following {}".format(self, ident))
 
         return following
 
@@ -722,9 +722,9 @@ class Persona(Identity):
         Returns:
             Updated MovementMemberAssociation object or None if it was deleted
         """
-        if movement not in self.movements_followed:
+        if movement not in self.blogs_followed:
             logger.info("Setting {} to follow {}.".format(self, movement))
-            self.toggle_following_movement(movement)
+            self.toggle_following(movement)
 
         gms = MovementMemberAssociation.query.filter_by(movement_id=movement.id). \
             filter_by(persona_id=self.id).first()
@@ -834,11 +834,12 @@ class Persona(Identity):
 
         # Request unknown movements
         movements_1 = changeset.get('movements') or []
-        movements_2 = changeset.get('movements_followed') or []
+        movements_2 = changeset.get('blogs_followed') or []
         movements_to_check = movements_1 + movements_2
 
+        # TODO This doesn't work anymore because Movement is inheriting from Identity
         for movement_info in movements_to_check:
-            movement = Movement.query.get(movement_info["id"])
+            movement = Identity.query.get(movement_info["id"])
             if movement is None:
                 request_list.append({
                     "type": "Movement",
