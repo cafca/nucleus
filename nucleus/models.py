@@ -938,6 +938,19 @@ class DialogueNotification(Notification):
         self.recipient = recipient
 
 
+class FollowerNotification(Notification):
+    __mapper_args__ = {
+        'polymorphic_identity': 'follower_notification'
+    }
+
+    def __init__(self, author, recipient):
+        super(FollowerNotification, self).__init__()
+        self.text = "{} is now following your blog".format(author.username)
+        self.url = author.get_absolute_url()
+        self.recipient = recipient
+        self.source = author.username
+
+
 t_thought_vesicles = db.Table(
     'thought_vesicles',
     db.Column('thought_id', db.String(32), db.ForeignKey('thought.id')),
