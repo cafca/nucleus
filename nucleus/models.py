@@ -1023,12 +1023,21 @@ class Thought(Serializable, db.Model):
         Returns:
             Boolean: True if authorized
         """
+        rv = False
+
         if Serializable.authorize(self, action, author_id=author_id):
-            if isinstance(self.author, Movement):
-                return author_id == self.author.admin_id
+            # Thoughts may be read by anyone who may see their mindset
+            if action == "read":
+                rv = self.mindset.authorize(action, author_id)
+
+            # Other actions are allowed for the Thought author
+            # and administrators of its mindset context
             else:
-                return author_id == self.author.id
-        return False
+                if author_id == self.author.id:
+                    rv = True
+                else:
+                    rv = self.mindset.authorize(action, author_id)
+        return rv
 
     @property
     def attachments(self):
@@ -2440,6 +2449,13 @@ class Mindspace(Mindset):
         'polymorphic_identity': 'mindspace'
     }
 
+    def authorize(self, action, author_id=None):
+        if isinstance(self.author, Persona):
+            rv = (author_id == self.author.id)
+        elif isinstance(self.author, Movement):
+            rv = self.author.authorize(action, author_id)
+        return rv
+
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
         rv = None
@@ -2473,6 +2489,17 @@ class Blog(Mindset):
     __mapper_args__ = {
         'polymorphic_identity': 'blog'
     }
+
+    def authorize(self, action, author_id=None):
+        if action == "read":
+            rv = True
+        else:
+            if isinstance(self.author, Movement):
+                rv = (author_id == self.author.id) \
+                    or (author_id == self.author.admin.id)
+            else:
+                rv = (author_id == self.author.id)
+        return rv
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -2512,6 +2539,9 @@ class Dialogue(Mindset):
         primaryjoin="identity.c.id==mindset.c.other_id")
     other_id = db.Column(db.String(32), db.ForeignKey(
         'identity.id', use_alter=True, name="fk_dialogue_other"))
+
+    def authorize(self, action, author_id=None):
+        return (author_id == self.author.id) or (author_id == self.other_id)
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -2671,18 +2701,21 @@ class Movement(Identity):
         Returns:
             Boolean: True if authorized
         """
+        rv = False
         if Serializable.authorize(self, action, author_id=author_id):
-            if action == "read" and self.private:
-                member = MovementMemberAssociation.query \
-                    .filter_by(movement=self) \
-                    .filter_by(active=True) \
-                    .filter_by(persona_id=author_id) \
-                    .first()
+            if action == "read":
+                rv = True
+                if self.private:
+                    member = MovementMemberAssociation.query \
+                        .filter_by(movement=self) \
+                        .filter_by(active=True) \
+                        .filter_by(persona_id=author_id) \
+                        .first()
 
-                return member is not None
+                    rv = member is not None
             else:
-                return self.admin_id == author_id
-        return False
+                rv = self.admin_id == author_id
+        return rv
 
     @property
     def contacts(self):
