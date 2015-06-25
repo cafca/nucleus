@@ -1079,14 +1079,21 @@ class Thought(Serializable, db.Model):
     def comments(self):
         return self.children.filter_by(kind="thought")
 
-    def comment_count(self):
+    def comment_count(self, iter=15):
         """
         Return the number of comemnts this Thought has receieved
+
+        Iterates up to a depth of 15 replies
 
         Returns:
             Int: Number of comments
         """
-        return self.comments.filter_by(state=0).count()
+        rv = 0
+        iter = iter - 1
+        if iter > 0:
+            for comment in self.comments.filter_by(state=0):
+                rv += comment.comment_count(iter=iter) + 1
+        return rv
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
