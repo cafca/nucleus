@@ -2720,7 +2720,7 @@ class Movement(Identity):
     @property
     def contacts(self):
         """Alias for Movememt.members for compatibility with Persona class"""
-        return self.members
+        return self.members.filter_by(active=True)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None, request_sources=True):
