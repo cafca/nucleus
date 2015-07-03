@@ -2606,8 +2606,9 @@ class MovementMemberAssociation(db.Model):
 
     __tablename__ = 'movementmember_association'
 
-    movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'), primary_key=True)
-    persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
+    movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'))
+    persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
     persona = db.relationship("Persona", backref="movement_assocs")
 
     # Role may be either 'admin' or 'member'
