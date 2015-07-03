@@ -2616,6 +2616,7 @@ class MovementMemberAssociation(db.Model):
     description = db.Column(db.Text)
     last_seen = db.Column(db.DateTime, default=datetime.datetime.utcnow())
     role = db.Column(db.String(16), default="member")
+    invitation_code = db.Column(db.String(32))
 
 
 t_members = db.Table(
