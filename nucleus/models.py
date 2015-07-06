@@ -709,7 +709,8 @@ class Persona(Identity):
 
         return following
 
-    def toggle_movement_membership(self, movement, role="member"):
+    def toggle_movement_membership(self, movement, role="member",
+            invitation_code=None):
         """Toggle whether this Persona is member of a movement.
 
         Also enables movement following for this Persona/Movement.
@@ -718,16 +719,32 @@ class Persona(Identity):
             movement (Movement): Movement entity to be become member of
             role (String): What role to take in the movement. May be "member"
                 or "admin"
+            invitation_code (String): (Optional) If the movement is private
+                an invitation code may be needed to join
 
         Returns:
             Updated MovementMemberAssociation object or None if it was deleted
         """
-        if movement not in self.blogs_followed:
+        if invitation_code is not None:
+            gms = MovementMemberAssociation.query \
+                .filter_by(invitation_code=invitation_code) \
+                .first()
+        else:
+            gms = MovementMemberAssociation.query \
+                .filter_by(movement_id=movement.id) \
+                .filter_by(persona_id=self.id) \
+                .first()
+
+        # Follow movement when joining
+        if movement not in self.blogs_followed and (gms is None or not gms.active):
             logger.info("Setting {} to follow {}.".format(self, movement))
             self.toggle_following(movement)
 
-        gms = MovementMemberAssociation.query.filter_by(movement_id=movement.id). \
-            filter_by(persona_id=self.id).first()
+        # Validate invitation code
+        if gms is None or (gms.active is False and gms.invitation_code != invitation_code):
+            if movement.private and current_user.active_persona != movement.admin:
+                logger.warning("Invalid invitation code '{}'".format(invitation_code))
+                raise UnauthorizedError("Invalid invitation code '{}'".format(invitation_code))
 
         if gms is None:
             logger.info("Enabling membership of {} in {}".format(self, movement))
@@ -737,11 +754,20 @@ class Persona(Identity):
                 role=role,
             )
             rv = gms
+
+        elif gms.active is False:
+            gms.active = True
+            gms.role = role
+            gms.persona = current_user.active_persona
+            logger.info("Membership of {} in {} re-enabled".format(self, movement))
+            rv = gms
+
         else:
             if self.id == movement.admin_id:
                 raise NotImplementedError("Admin can't leave the movement")
-            logger.info("Removing membership of {} in {}".format(self, movement))
-            gms.query.delete()
+            logger.info("Disabling membership of {} in {}".format(self, movement))
+            gms.active = False
+            gms.role = "left"
             rv = None
         return rv
 
