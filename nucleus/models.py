@@ -2727,7 +2727,7 @@ class Movement(Identity):
             persona = current_user.active_persona
 
         if persona:
-            gms = self.members.query \
+            gms = self.members \
                 .filter_by(persona=persona) \
                 .first()
 
