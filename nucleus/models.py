@@ -2710,6 +2710,32 @@ class Movement(Identity):
 
         return "<Movement @{} [{}]>".format(name, self.id[:6])
 
+    def active_member(self, persona=None):
+        """Return True if persona or currently active Persona is an active
+            member or admin
+
+        Args:
+            persona (Persona): Optional Persona. Will default to active Persona
+                if left blank
+
+        Returns:
+            boolean: True if active member
+        """
+        rv = False
+
+        if persona is None and current_user.is_anonymous() is False:
+            persona = current_user.active_persona
+
+        if persona:
+            gms = self.members.query \
+                .filter_by(persona=persona) \
+                .first()
+
+            if gms and gms.active is True:
+                rv = True
+
+        return rv
+
     def add_member(self, persona):
         """Add a Persona as member to this movement
 
