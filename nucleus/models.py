@@ -1414,6 +1414,8 @@ class Thought(Serializable, db.Model):
         """
         Return True if active Persona has Upvoted this Thought
         """
+        if current_user.is_anonymous():
+            return False
 
         upvote = self.upvotes.filter_by(author=current_user.active_persona).first()
 
@@ -1457,6 +1459,9 @@ class Thought(Serializable, db.Model):
         """
 
         if author_id is None:
+            if current_user.is_anonymous():
+                return PersonaNotFoundError("You need to log in for voting")
+
             author = current_user.active_persona
         else:
             author = Persona.query.get(author_id)
