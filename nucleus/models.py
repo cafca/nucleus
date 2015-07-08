@@ -25,6 +25,7 @@ UPVOTE_CACHE_DURATION = 10
 ATTENTION_CACHE_DURATION = 60
 TOP_MOVEMENT_CACHE_DURATION = 180
 TOP_THOUGHT_CACHE_DURATION = 180
+SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
 
 request_objects = notification_signals.signal('request-objects')
 logger = logging.getLogger('nucleus')
@@ -703,6 +704,19 @@ class Persona(Identity):
         self.session_id = uuid4().hex
         self.auth = uuid4().hex
         return self.session_id
+
+    @cache.memoize(timeout=SUGGESTED_MOVEMENTS_CACHE_DURATION)
+    def suggested_movements(self):
+        """Return a list of IDs for movements that are not followed but have
+        many members.
+
+        Returns:
+            list: IDs of Movements
+        """
+        mov_selection = Movement.top_movements()
+        user_movs = [mma.movement.id for mma in self.movement_assocs]
+        rv = [m['id'] for m in mov_selection if m['id'] not in user_movs]
+        return rv
 
     def timeout(self):
         return self.last_connected + current_app.config['SESSION_EXPIRATION_TIME']
@@ -1402,15 +1416,22 @@ class Thought(Serializable, db.Model):
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
     def top_thought(cls):
-        """Return up to 10 hottest thoughts as measured by Thought.hot"""
+        """Return up to 10 hottest thoughts as measured by Thought.hot
+
+        Returns:
+            list: List of dicts with keys 'id', 'text'
+        """
         top_post_selection = cls.query.filter(cls.state >= 0)
         top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
-        top_posts = []
-        while len(top_posts) < min([10, len(top_post_selection)]):
+        rv = list()
+        while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
             if candidate.upvote_count() > 0:
-                top_posts.append(candidate)
-        return top_posts
+                rv.append({
+                    "id": candidate.id,
+                    "text": candidate.text
+                })
+        return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a Thought from a changeset (See Serializable.update_from_changeset)"""
@@ -2800,6 +2821,7 @@ class Movement(Identity):
         Returns:
             integer: Attention as a positive integer
         """
+
         thoughts = self.blog.index \
             .filter(Thought.state >= 0).all()
 
@@ -2979,16 +3001,26 @@ class Movement(Identity):
 
     @classmethod
     @cache.memoize(timeout=TOP_MOVEMENT_CACHE_DURATION)
-    def top_movements(cls, p_id, count=10):
-        rv = Movement.query \
+    def top_movements(cls, count=10):
+        """Return a list of top movements as measured by member count
+
+        Returns:
+            list: List of dicts with keys 'id', 'username'
+        """
+        movements = Movement.query \
             .join(MovementMemberAssociation) \
             .order_by(func.count(MovementMemberAssociation.persona_id)) \
             .group_by(MovementMemberAssociation.persona_id) \
             .group_by(Movement)
-        if p_id:
-            rv = rv.filter(MovementMemberAssociation.persona_id != p_id)
 
-        return rv.limit(count).all()
+        rv = list()
+        for m in movements.limit(count):
+            rv.append({
+                "id": m.id,
+                "username": m.username
+            })
+
+        return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update movement. See Serializable.update_from_changeset"""
