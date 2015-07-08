@@ -1064,16 +1064,19 @@ class Thought(Serializable, db.Model):
         rv = False
 
         if Serializable.authorize(self, action, author_id=author_id):
-            # Thoughts may be read by anyone who may see their mindset
+            # Thoughts may be read by anyone who may see their mindset/parent
             if action == "read":
-                rv = self.mindset.authorize(action, author_id)
+                if self.mindset:
+                    rv = self.mindset.authorize("read", author_id)
+                else:
+                    rv = self.parent.authorize("read", author_id)
 
             # Other actions are allowed for the Thought author
             # and administrators of its mindset context
             else:
                 if author_id == self.author.id:
                     rv = True
-                else:
+                elif self.mindset:
                     rv = self.mindset.authorize(action, author_id)
         return rv
 
