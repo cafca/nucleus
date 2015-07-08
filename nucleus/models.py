@@ -20,6 +20,8 @@ from .helpers import epoch_seconds, process_attachments
 
 from database import cache, db
 
+UPVOTE_CACHE_DURATION = 10
+
 request_objects = notification_signals.signal('request-objects')
 logger = logging.getLogger('nucleus')
 
@@ -1441,7 +1443,7 @@ class Thought(Serializable, db.Model):
         """Returns a query for all upvotes, including disabled ones"""
         return self.children.filter_by(kind="upvote")
 
-    @cache.memoize(timeout=10)
+    @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
     def upvote_count(self, disregard_self=False):
         """
         Return the number of verified upvotes this Thought has receieved
@@ -1449,9 +1451,16 @@ class Thought(Serializable, db.Model):
         Returns:
             Int: Number of upvotes
         """
-        uv = self.upvotes.filter(Upvote.state >= 0)
-        if disregard_self and not current_user.is_anonymous():
-            uv = uv.filter(Upvote.author != current_user.active_persona)
+        uv = self.upvotes \
+            .filter(Upvote.state >= 0)
+
+        if current_app.config["UPVOTES_FILTER_DISTINCT_USERS"]:
+            uv = uv \
+                .join(Persona) \
+                .join(PersonaAssociation) \
+                .join(User) \
+                .distinct(User.id)
+
         return uv.count()
 
     def text_percepts(self):
