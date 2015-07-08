@@ -577,6 +577,18 @@ class Persona(Identity):
             return (self.id == author_id)
         return False
 
+    @property
+    def attention(self):
+        """Return a numberic value indicating attention this Persona has received
+
+        Returns:
+            integer: Attention as a positive integer
+        """
+        thoughts = Thought.query \
+            .filter_by(author=self)
+
+        return int(sum([t.hot() for t in thoughts]) / 100)
+
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
         """See Serializable.create_from_changeset"""
@@ -1341,7 +1353,7 @@ class Thought(Serializable, db.Model):
         from math import log
         # Uncomment to assign a score with analytics.score
         # s = score(self)
-        s = self.upvote_count()
+        s = self.upvote_count(disregard_self=True)
         order = log(max(abs(s), 1), 10)
         sign = 1 if s > 0 else -1 if s < 0 else 0
         return round(order + sign * epoch_seconds(self.created) / 45000, 7)
@@ -1430,14 +1442,17 @@ class Thought(Serializable, db.Model):
         return self.children.filter_by(kind="upvote")
 
     @cache.memoize(timeout=10)
-    def upvote_count(self):
+    def upvote_count(self, disregard_self=False):
         """
         Return the number of verified upvotes this Thought has receieved
 
         Returns:
             Int: Number of upvotes
         """
-        return self.upvotes.filter(Upvote.state >= 0).count()
+        uv = self.upvotes.filter(Upvote.state >= 0)
+        if disregard_self and not current_user.is_anonymous():
+            uv = uv.filter(Upvote.author != current_user.active_persona)
+        return uv.count()
 
     def text_percepts(self):
         """Return TextPercepts of this Thought"""
