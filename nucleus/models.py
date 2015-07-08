@@ -1050,7 +1050,7 @@ class Thought(Serializable, db.Model):
     def __repr__(self):
         text = self.text.encode('utf-8')
         return "<Thought {}: {}>".format(
-            self.id[:6],
+            self.id[:8],
             (text[:24] if len(text) <= 24 else text[:22] + ".."))
 
     def authorize(self, action, author_id=None):
@@ -2112,7 +2112,7 @@ class Souma(Serializable, db.Model):
     mindset_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
     mindset = db.relationship('Mindset')
 
-    def __str__(self):
+    def __repr__(self):
         return "<Souma [{}]>".format(self.id[:6])
 
     def authentic_request(self, request):

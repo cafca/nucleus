@@ -76,7 +76,7 @@ class Vesicle(db.Model):
 
         self._send_attributes = json.dumps(Vesicle._default_send_attributes)
 
-    def __str__(self):
+    def __repr__(self):
         """Return string identifier
 
         Returns:
