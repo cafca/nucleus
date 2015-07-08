@@ -24,6 +24,7 @@ from database import cache, db
 UPVOTE_CACHE_DURATION = 5
 ATTENTION_CACHE_DURATION = 10
 TOP_MOVEMENT_CACHE_DURATION = 180
+MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
 
@@ -2963,13 +2964,14 @@ class Movement(Identity):
         return PERCEPT_STATES[self.state][0]
 
     @property
+    @cache.memoize(timeout=MEMBER_COUNT_CACHE_DURATION)
     def member_count(self):
         """Return number of active members in this movement
 
         Returns:
             int: member count
         """
-        return self.members.count()
+        return int(self.members.count())
 
     def remove_member(self, persona):
         """Remove a Persona from this movement's local member list
@@ -2990,7 +2992,7 @@ class Movement(Identity):
             int: Number of votes required
         """
         from math import log
-        c = self.member_count()
+        c = self.member_count
         rv = int(c / 100.0 + 2.0 / c + log(c, 1.65))
         return rv
 
@@ -3127,3 +3129,17 @@ class Movement(Identity):
             self.username, updated_members, len(stale_members), len(request_list)))
 
         return request_list
+
+    def voting_done(self, thought):
+        """Provide a value in [0,1] indicating how many votes have been cast
+            toward promoting a thought. For already blogged thoughts 1 is also
+            returned
+
+        Returns:
+            float: Ratio of required votes already cast
+        """
+        if self.has_blogged(thought):
+            rv = 1
+        else:
+            rv = min([float(thought.upvote_count()) / self.required_votes(), 1.0])
+        return rv
