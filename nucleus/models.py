@@ -1372,11 +1372,9 @@ class Thought(Serializable, db.Model):
     def hot(self):
         """i reddit"""
         from math import log
-        # Uncomment to assign a score with analytics.score
-        # s = score(self)
-        s = self.upvote_count(disregard_self=True)
+        s = self.upvote_count()
         order = log(max(abs(s), 1), 10)
-        sign = 1 if s > 0 else -1 if s < 0 else 0
+        sign = 1 if s > 0 else 0
         return round(order + sign * epoch_seconds(self.created) / 45000, 7)
 
     def link_url(self):
@@ -1483,7 +1481,7 @@ class Thought(Serializable, db.Model):
         return self.children.filter_by(kind="upvote")
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
-    def upvote_count(self, disregard_self=False):
+    def upvote_count(self):
         """
         Return the number of verified upvotes this Thought has receieved
 
@@ -2981,6 +2979,20 @@ class Movement(Identity):
         """
         if persona in self.members:
             self.members.remove(persona)
+
+    def required_votes(self):
+        """Return the number of votes required to promote a Thought ot the blog
+
+        n = round(count/100 + 2/count + (log(1.65,count)))
+        with count being the number of members this movement has
+
+        Returns:
+            int: Number of votes required
+        """
+        from math import log
+        c = self.member_count()
+        rv = int(c / 100.0 + 2.0 / c + log(c, 1.65))
+        return rv
 
     def set_state(self, new_state):
         """
