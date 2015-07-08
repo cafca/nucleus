@@ -1083,14 +1083,11 @@ class Thought(Serializable, db.Model):
     @property
     def attachments(self):
         pa = self.percept_assocs \
-            .join(Percept) \
-            .filter(Percept.kind.in_(ATTACHMENT_KINDS))
-        rv = dict()
+            .join(Percept)
 
+        rv = dict()
         for category in ATTACHMENT_KINDS:
             rv[category] = pa.filter(Percept.kind == category).all()
-
-        rv["tag"] = pa.filter(Percept.kind == "tag").all()
 
         return rv
 
