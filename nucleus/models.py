@@ -11,6 +11,7 @@ from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
+from sqlalchemy import func
 from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
@@ -21,6 +22,9 @@ from .helpers import epoch_seconds, process_attachments
 from database import cache, db
 
 UPVOTE_CACHE_DURATION = 10
+ATTENTION_CACHE_DURATION = 60
+TOP_MOVEMENT_CACHE_DURATION = 180
+TOP_THOUGHT_CACHE_DURATION = 180
 
 request_objects = notification_signals.signal('request-objects')
 logger = logging.getLogger('nucleus')
@@ -580,6 +584,7 @@ class Persona(Identity):
         return False
 
     @property
+    @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
     def attention(self):
         """Return a numberic value indicating attention this Persona has received
 
@@ -589,7 +594,7 @@ class Persona(Identity):
         thoughts = Thought.query \
             .filter_by(author=self)
 
-        return int(sum([t.hot() for t in thoughts]) / 100)
+        return int(sum([t.hot() for t in thoughts]) / 1000)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1393,6 +1398,19 @@ class Thought(Serializable, db.Model):
     @property
     def tags(self):
         return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+
+    @classmethod
+    @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
+    def top_thought(cls):
+        """Return up to 10 hottest thoughts as measured by Thought.hot"""
+        top_post_selection = cls.query.filter(cls.state >= 0)
+        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
+        top_posts = []
+        while len(top_posts) < min([10, len(top_post_selection)]):
+            candidate = top_post_selection.pop(0)
+            if candidate.upvote_count() > 0:
+                top_posts.append(candidate)
+        return top_posts
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update a Thought from a changeset (See Serializable.update_from_changeset)"""
@@ -2774,6 +2792,21 @@ class Movement(Identity):
         if persona not in self.members:
             self.members.append(persona)
 
+    @property
+    @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
+    def attention(self):
+        """Return a numberic value indicating attention this Movement has received
+
+        Returns:
+            integer: Attention as a positive integer
+        """
+        thoughts = self.blog.index \
+            .filter(Thought.state >= 0).all()
+
+        thoughts += self.mindspace.index.filter(Thought.state >= 0).all()
+
+        return int(sum([t.hot() for t in thoughts]) / 1000)
+
     def authorize(self, action, author_id=None):
         """Return True if this Movement authorizes `action` for `author_id`
 
@@ -2943,6 +2976,19 @@ class Movement(Identity):
                 new_state, type(new_state))
         else:
             self.state = new_state
+
+    @classmethod
+    @cache.memoize(timeout=TOP_MOVEMENT_CACHE_DURATION)
+    def top_movements(cls, p_id, count=10):
+        rv = Movement.query \
+            .join(MovementMemberAssociation) \
+            .order_by(func.count(MovementMemberAssociation.persona_id)) \
+            .group_by(MovementMemberAssociation.persona_id) \
+            .group_by(Movement)
+        if p_id:
+            rv = rv.filter(MovementMemberAssociation.persona_id != p_id)
+
+        return rv.limit(count).all()
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update movement. See Serializable.update_from_changeset"""
