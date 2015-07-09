@@ -27,6 +27,7 @@ TOP_MOVEMENT_CACHE_DURATION = 180
 MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
+MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 10
 
 ATTENTION_MULT = 100
 
@@ -2478,6 +2479,17 @@ class Mindset(Serializable, db.Model):
                 new_state, type(new_state))
         else:
             self.state = new_state
+
+    @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
+    def mindspace_top_thought(self, count=15):
+        """Return count top thoughts from mindspace
+
+        Returns:
+            list: Dicts with key 'id'
+        """
+        selection = self.mindspace.index.filter(Thought.state >= 0).all()
+        rv = sorted(selection, key=Thought.hot, reverse=True)[:count]
+        return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update the Mindset's index using a changeset
