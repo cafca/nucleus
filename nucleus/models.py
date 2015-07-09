@@ -17,7 +17,7 @@ from uuid import uuid4
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES
-from .helpers import epoch_seconds, process_attachments
+from .helpers import process_attachments
 
 from database import cache, db
 
@@ -29,6 +29,7 @@ TOP_THOUGHT_CACHE_DURATION = 180
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
 
 request_objects = notification_signals.signal('request-objects')
+movement_chat = notification_signals.signal('movement-chat')
 logger = logging.getLogger('nucleus')
 
 
@@ -1550,13 +1551,21 @@ class Thought(Serializable, db.Model):
             upvote.set_state(-1) if upvote.state == 0 else upvote.set_state(0)
         else:
             old_state = False
-            upvote = Upvote(id=uuid4().hex, author=author, parent=self)
+            upvote = Upvote(id=uuid4().hex, author=author, parent=self, state=0)
             self.children.append(upvote)
 
         # Commit Upvote
         db.session.add(self)
         db.session.commit()
         cache.delete_memoized(self.upvote_count)
+
+        if upvote.state == 0 and \
+            isinstance(self.mindset, Mindspace) and \
+                isinstance(self.mindset.author, Movement):
+            if self.mindset.author.promotion_check(self):
+                db.session.add(self.mindset.author.blog)
+                db.session.commit()
+
         logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
 
         return upvote
@@ -3000,8 +3009,9 @@ class Movement(Identity):
             Thought: The new blog post
         """
         rv = None
-        if thought.upvote_count(from_movement=self.id) >= self.required_votes():
+        if thought.upvote_count(from_movement=self.id) >= self.required_votes() and not self.has_blogged(thought):
             rv = Thought.clone(thought, self, self.blog)
+            movement_chat.send(self, room_id=self.mindspace.id, message="New promotion! Check the blog")
         return rv
 
     def remove_member(self, persona):
@@ -3172,5 +3182,6 @@ class Movement(Identity):
         if self.has_blogged(thought):
             rv = 1
         else:
-            rv = min([float(thought.upvote_count()) / self.required_votes(), 1.0])
+            rv = min([float(thought.upvote_count(from_movement=self.id)) /
+                self.required_votes(), 1.0])
         return rv
