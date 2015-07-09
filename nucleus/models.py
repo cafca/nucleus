@@ -2480,17 +2480,6 @@ class Mindset(Serializable, db.Model):
         else:
             self.state = new_state
 
-    @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
-    def mindspace_top_thought(self, count=15):
-        """Return count top thoughts from mindspace
-
-        Returns:
-            list: Dicts with key 'id'
-        """
-        selection = self.mindspace.index.filter(Thought.state >= 0).all()
-        rv = sorted(selection, key=Thought.hot, reverse=True)[:count]
-        return rv
-
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
         """Update the Mindset's index using a changeset
 
@@ -2992,6 +2981,18 @@ class Movement(Identity):
             int: member count
         """
         return int(self.members.count())
+
+    @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
+    def mindspace_top_thought(self, count=15):
+        """Return count top thoughts from mindspace
+
+        Returns:
+            list: Dicts with key 'id'
+        """
+        selection = self.mindspace.index.filter(Thought.state >= 0).all()
+        rv = [t.id for t in sorted(
+            selection, key=Thought.hot, reverse=True)[:count]]
+        return rv
 
     def promotion_check(self, thought):
         """Promote a Thought to this movement's blog if it has enough upvotes
