@@ -159,20 +159,12 @@ class Serializable():
         return missing
 
 
-class PersonaAssociation(db.Model):
-    """Connects user accounts and personas"""
-    __tablename__ = "persona_association"
-    left_id = db.Column(db.String(32), db.ForeignKey('user.id'), primary_key=True)
-    right_id = db.Column(db.String(32), db.ForeignKey('persona.id'), primary_key=True)
-    persona = db.relationship("Persona", backref="associations")
-
-
 class User(UserMixin, db.Model):
     """A user of the website"""
 
     __tablename__ = 'user'
 
-    id = db.Column(db.String(32), primary_key=True, default=uuid4().hex)
+    id = db.Column(db.String(32), primary_key=True)
 
     active = db.Column(db.Boolean(), default=True)
     authenticated = db.Column(db.Boolean(), default=True)
@@ -184,10 +176,10 @@ class User(UserMixin, db.Model):
     signup_code = db.Column(db.String(128))
 
     # Relations
-    active_persona = db.relationship("Persona")
-    active_persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-
-    associations = db.relationship('PersonaAssociation', lazy="dynamic", backref="user")
+    active_persona = db.relationship("Persona",
+        primaryjoin="persona.c.id==user.c.active_persona_id", post_update=True)
+    active_persona_id = db.Column(db.String(32),
+        db.ForeignKey('persona.id', name="fk_active_persona"))
 
     def __repr__(self):
         return "<User {}>".format(self.email.decode('utf-8'))
@@ -448,18 +440,6 @@ class Identity(Serializable, db.Model):
             .count()
         return count > 0
 
-    @staticmethod
-    def list_controlled():
-        if not current_user.is_anonymous() and current_user.active_persona is not None:
-            controlled_user = User.query \
-                .join(PersonaAssociation) \
-                .filter(PersonaAssociation.right_id == current_user.active_persona.id) \
-                .first()
-
-            return [asc.persona for asc in controlled_user.associations] if controlled_user else []
-        else:
-            return []
-
     def notification_list(self, limit=5):
         return self.notifications \
             .filter_by(unread=True) \
@@ -549,12 +529,12 @@ class Persona(Identity):
 
     id = db.Column(db.String(32), db.ForeignKey('identity.id'), primary_key=True)
 
-    auth = db.Column(db.String(32), default=uuid4().hex)
+    auth = db.Column(db.String(32))
     last_connected = db.Column(db.DateTime, default=datetime.datetime.now())
     # Myelin offset stores the date at which the last Vesicle receieved from Myelin was created
     myelin_offset = db.Column(db.DateTime)
     email = db.Column(db.String(120))
-    session_id = db.Column(db.String(32), default=uuid4().hex)
+    session_id = db.Column(db.String(32))
 
     # Relations
     contacts = db.relationship('Persona',
@@ -565,7 +545,13 @@ class Persona(Identity):
         secondaryjoin='contacts.c.right_id==persona.c.id')
 
     index_id = db.Column(db.String(32), db.ForeignKey('mindset.id'))
-    index = db.relationship('Mindset', primaryjoin='mindset.c.id==persona.c.index_id')
+    index = db.relationship('Mindset',
+        primaryjoin='mindset.c.id==persona.c.index_id')
+
+    user_id = db.Column(db.String(32),
+        db.ForeignKey('user.id', use_alter=True, name="fk_persona_user"))
+    user = db.relationship('User',
+        backref="associations", primaryjoin="user.c.id==persona.c.user_id")
 
     def __repr__(self):
         try:
@@ -916,10 +902,6 @@ class Persona(Identity):
 
         for req in request_list:
             request_objects.send(Persona.update_from_changeset, message=req)
-
-    @property
-    def user(self):
-        return self.associations[0].user
 
 
 class Notification(db.Model):
@@ -1502,8 +1484,7 @@ class Thought(Serializable, db.Model):
         if current_app.config["UPVOTES_FILTER_DISTINCT_USERS"]:
             uv = uv \
                 .join(Persona) \
-                .join(PersonaAssociation) \
-                .join(User) \
+                .join(User, Persona.user_id == User.id) \
                 .distinct(User.id)
 
         if from_movement:
