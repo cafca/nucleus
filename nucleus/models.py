@@ -1482,9 +1482,13 @@ class Thought(Serializable, db.Model):
         return self.children.filter_by(kind="upvote")
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
-    def upvote_count(self):
+    def upvote_count(self, from_movement=None):
         """
         Return the number of verified upvotes this Thought has receieved
+
+        Args:
+            from_movement (String): Only count upvotes from members of the
+                movement with this ID
 
         Returns:
             Int: Number of upvotes
@@ -1498,6 +1502,11 @@ class Thought(Serializable, db.Model):
                 .join(PersonaAssociation) \
                 .join(User) \
                 .distinct(User.id)
+
+        if from_movement:
+            uv = uv \
+                .join(MovementMemberAssociation) \
+                .filter(MovementMemberAssociation.movement_id == from_movement)
 
         return uv.count()
 
