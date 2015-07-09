@@ -22,7 +22,7 @@ from .helpers import epoch_seconds, process_attachments
 from database import cache, db
 
 UPVOTE_CACHE_DURATION = 5
-ATTENTION_CACHE_DURATION = 10
+ATTENTION_CACHE_DURATION = 60
 TOP_MOVEMENT_CACHE_DURATION = 180
 MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
@@ -596,7 +596,8 @@ class Persona(Identity):
         thoughts = Thought.query \
             .filter_by(author=self)
 
-        return int(sum([t.hot() for t in thoughts]) / 1000)
+        rv = int(sum([t.hot() for t in thoughts]) * 1000)
+        return rv
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1371,12 +1372,11 @@ class Thought(Serializable, db.Model):
         return first is not None
 
     def hot(self):
-        """i reddit"""
-        from math import log
+        from math import pow
         s = self.upvote_count()
-        order = log(max(abs(s), 1), 10)
-        sign = 1 if s > 0 else 0
-        return round(order + sign * epoch_seconds(self.created) / 45000, 7)
+        t = (datetime.datetime.utcnow() - self.created).total_seconds() / 3600 + 2
+        rv = (s / pow(t, 1.5))
+        return rv
 
     def link_url(self):
         """Return URL if this Thought has a Link-Percept
@@ -2104,6 +2104,9 @@ class Upvote(Thought):
         """
         return UPVOTE_STATES[self.state][0]
 
+    def hot(self):
+        return 0
+
     def set_state(self, new_state):
         """
         Set the publishing state of this Upvote
@@ -2822,11 +2825,15 @@ class Movement(Identity):
         """
 
         thoughts = self.blog.index \
-            .filter(Thought.state >= 0).all()
+            .filter(Thought.state >= 0) \
+            .filter(Thought.kind != "upvote").all()
 
-        thoughts += self.mindspace.index.filter(Thought.state >= 0).all()
+        thoughts += self.mindspace.index \
+            .filter(Thought.state >= 0) \
+            .filter(Thought.kind != "upvote").all()
 
-        return int(sum([t.hot() for t in thoughts]) / 1000)
+        rv = int(sum([t.hot() for t in thoughts]) * 1000)
+        return rv
 
     def authorize(self, action, author_id=None):
         """Return True if this Movement authorizes `action` for `author_id`
