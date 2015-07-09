@@ -1057,16 +1057,6 @@ class Thought(Serializable, db.Model):
     def __repr__(self):
         return "<Thought {}>".format(self.id[:8])
 
-    def __str__(self):
-        try:
-            text = self.text.encode('utf-8')
-            rv = "<Thought {}: {}>".format(
-                self.id[:8],
-                (text[:24] if len(text) <= 24 else text[:22] + ".."))
-        except UnicodeDecodeError:
-            rv = self.__str__()
-        return rv
-
     def authorize(self, action, author_id=None):
         """Return True if this Thought authorizes `action` for `author_id`
 
