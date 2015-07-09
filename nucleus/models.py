@@ -26,7 +26,7 @@ ATTENTION_CACHE_DURATION = 60
 TOP_MOVEMENT_CACHE_DURATION = 180
 MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
-SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
+SUGGESTED_MOVEMENTS_CACHE_DURATION = 0
 MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 10
 
 ATTENTION_MULT = 100
@@ -1411,18 +1411,15 @@ class Thought(Serializable, db.Model):
         """Return up to 10 hottest thoughts as measured by Thought.hot
 
         Returns:
-            list: List of dicts with keys 'id', 'text'
+            list: List of thought ids
         """
         top_post_selection = cls.query.filter(cls.state >= 0)
         top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
         rv = list()
         while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
-            if candidate.upvote_count() > 0:
-                rv.append({
-                    "id": candidate.id,
-                    "text": candidate.text
-                })
+            if candidate.upvote_count() > 0 and (candidate.mindset is None or not candidate.mindset.private):
+                rv.append(candidate.id)
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
