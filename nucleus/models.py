@@ -1901,11 +1901,12 @@ class LinkPercept(Percept):
 
         return new_percept
 
-    def favicon_url(self):
-        """Return the URL of this Percept's domain favicon
+    @property
+    def domain(self):
+        """Return the name of this Percept's domain
 
         Returns:
-            string: URL of the favicon as a 32 pixel image"""
+            string: domain like 'rktik.com'"""
 
         # Taken from http://stackoverflow.com/questions/9626535/get-domain-name-from-url/9626596#9626596
 
@@ -1913,11 +1914,12 @@ class LinkPercept(Percept):
 
         parsed_uri = urlparse(self.url)
         try:
-            domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+            # domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+            rv = parsed_uri.netloc
         except AttributeError, e:
             logger.warning("Error retrieving domain for {}: {}".format(self, e))
-        else:
-            return "http://grabicon.com/icon?domain={}".format(domain)
+            rv = None
+        return rv
 
     @classmethod
     def get_or_create(cls, url, title=None):
