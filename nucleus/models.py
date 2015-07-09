@@ -2989,6 +2989,21 @@ class Movement(Identity):
         """
         return int(self.members.count())
 
+    def promotion_check(self, thought):
+        """Promote a Thought to this movement's blog if it has enough upvotes
+
+        Args:
+            thought (Thought): The thought to be promoted
+
+        Returns:
+            None: If no promotion was done
+            Thought: The new blog post
+        """
+        rv = None
+        if thought.upvote_count(from_movement=self.id) >= self.required_votes():
+            rv = Thought.clone(thought, self, self.blog)
+        return rv
+
     def remove_member(self, persona):
         """Remove a Persona from this movement's local member list
 
