@@ -1418,7 +1418,7 @@ class Thought(Serializable, db.Model):
         rv = list()
         while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
-            if candidate.upvote_count() > 0 and (candidate.mindset is None or not candidate.mindset.private):
+            if candidate.upvote_count() > 0:
                 rv.append(candidate.id)
         return rv
 
