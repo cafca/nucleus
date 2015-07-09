@@ -935,7 +935,7 @@ class Notification(db.Model):
     source = db.Column(db.String(128))
     text = db.Column(db.Text)
     unread = db.Column(db.Boolean(), default=True)
-    url = db.Column(db.Text)
+    url = db.Column(db.Text, default="/")
 
     # Relations
     recipient = db.relationship('Identity',
