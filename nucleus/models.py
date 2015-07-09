@@ -28,6 +28,8 @@ MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
 
+ATTENTION_MULT = 100
+
 request_objects = notification_signals.signal('request-objects')
 movement_chat = notification_signals.signal('movement-chat')
 logger = logging.getLogger('nucleus')
@@ -597,7 +599,7 @@ class Persona(Identity):
         thoughts = Thought.query \
             .filter_by(author=self)
 
-        rv = int(sum([t.hot() for t in thoughts]) * 1000)
+        rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         return rv
 
     @staticmethod
@@ -2850,7 +2852,7 @@ class Movement(Identity):
             .filter(Thought.state >= 0) \
             .filter(Thought.kind != "upvote").all()
 
-        rv = int(sum([t.hot() for t in thoughts]) * 1000)
+        rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         return rv
 
     def authorize(self, action, author_id=None):
