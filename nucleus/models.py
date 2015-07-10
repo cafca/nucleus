@@ -1919,6 +1919,7 @@ class LinkPercept(Percept):
         except AttributeError, e:
             logger.warning("Error retrieving domain for {}: {}".format(self, e))
             rv = None
+        rv = rv[4:] if rv.startswith('www.') else rv
         return rv
 
     @classmethod
