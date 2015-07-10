@@ -3,6 +3,7 @@ import datetime
 import json
 import iso8601
 import logging
+import os
 import semantic_version
 import re
 
@@ -11,6 +12,7 @@ from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
+from soundcloud import Client as SoundcloudClient
 from sqlalchemy import func
 from uuid import uuid4
 
@@ -23,11 +25,12 @@ from database import cache, db
 
 UPVOTE_CACHE_DURATION = 5
 ATTENTION_CACHE_DURATION = 60
-TOP_MOVEMENT_CACHE_DURATION = 180
+TOP_MOVEMENT_CACHE_DURATION = 60 * 5
 MEMBER_COUNT_CACHE_DURATION = 60
 TOP_THOUGHT_CACHE_DURATION = 180
-SUGGESTED_MOVEMENTS_CACHE_DURATION = 180
+SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 5
 MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 30
+IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
 
 ATTENTION_MULT = 10
 
@@ -1945,6 +1948,7 @@ class LinkPercept(Percept):
 
         return inst
 
+    @cache.memoize(timeout=IFRAME_URL_CACHE_DURATION)
     def iframe_url(self):
         """Return a URL to embed within an iframe if this link's domain provides such
 
@@ -1963,6 +1967,16 @@ class LinkPercept(Percept):
             if matches and matches.groups()[-1] and len(matches.groups()[-1]) == 11:
                 video_id = matches.groups()[-1]
                 rv = "https://www.youtube.com/embed/{id}".format(id=video_id)
+
+        elif parsed_uri.netloc == "soundcloud.com":
+            client_id = os.environ.get("SOUNDCLOUD_CLIENT_ID")
+            if not client_id:
+                logger.warning("Please set env var SOUNDCLOUD_CLIENT_ID to enable embeds")
+            else:
+                client = SoundcloudClient(client_id=client_id)
+                track = client.get('/resolve', url=self.url)
+                if track:
+                    rv = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{track_id}&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true".format(track_id=track.id)
 
         return rv
 
