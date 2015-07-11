@@ -2991,7 +2991,12 @@ class Movement(Identity):
         Returns:
             int: member count
         """
-        return int(self.members.count())
+        rv = MovementMemberAssociation.query \
+            .filter_by(movement=self) \
+            .filter_by(active=True) \
+            .count()
+
+        return int(rv)
 
     @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
     def mindspace_top_thought(self, count=15):
