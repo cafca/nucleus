@@ -751,53 +751,49 @@ class Persona(Identity):
                 an invitation code may be needed to join
 
         Returns:
-            Updated MovementMemberAssociation object or None if it was deleted
+            Updated MovementMemberAssociation object
         """
         if invitation_code is not None:
-            gms = MovementMemberAssociation.query \
+            mma = MovementMemberAssociation.query \
                 .filter_by(invitation_code=invitation_code) \
                 .first()
         else:
-            gms = MovementMemberAssociation.query \
-                .filter_by(movement_id=movement.id) \
-                .filter_by(persona_id=self.id) \
+            mma = MovementMemberAssociation.query \
+                .filter_by(movement=movement) \
+                .filter_by(persona=self) \
                 .first()
 
         # Follow movement when joining
-        if movement not in self.blogs_followed and (gms is None or not gms.active):
+        if movement not in self.blogs_followed and (mma is None or not mma.active):
             logger.info("Setting {} to follow {}.".format(self, movement))
             self.toggle_following(movement)
 
         # Validate invitation code
-        if gms is None or (gms.active is False and gms.invitation_code != invitation_code):
+        if mma is None or (mma.active is False and mma.invitation_code != invitation_code):
             if movement.private and current_user.active_persona != movement.admin:
                 logger.warning("Invalid invitation code '{}'".format(invitation_code))
                 raise UnauthorizedError("Invalid invitation code '{}'".format(invitation_code))
 
-        if gms is None:
+        if mma is None:
             logger.info("Enabling membership of {} in {}".format(self, movement))
-            gms = MovementMemberAssociation(
+            mma = MovementMemberAssociation(
                 persona=self,
-                movement_id=movement.id,
+                movement=movement,
                 role=role,
             )
-            rv = gms
 
-        elif gms.active is False:
-            gms.active = True
-            gms.role = role
-            gms.persona = current_user.active_persona
+        elif mma.active is False:
+            mma.active = True
+            mma.role = role
             logger.info("Membership of {} in {} re-enabled".format(self, movement))
-            rv = gms
 
         else:
             if self.id == movement.admin_id:
                 raise NotImplementedError("Admin can't leave the movement")
             logger.info("Disabling membership of {} in {}".format(self, movement))
-            gms.active = False
-            gms.role = "left"
-            rv = None
-        return rv
+            mma.active = False
+            mma.role = "left"
+        return mma
 
     def update_contacts(self, contact_list):
         """Update Persona's contacts from a list of the new contacts
@@ -2714,6 +2710,8 @@ class MovementMemberAssociation(db.Model):
     """Associates Personas with Movements"""
 
     __tablename__ = 'movementmember_association'
+    __table_args__ = (db.UniqueConstraint(
+        'movement_id', 'persona_id', name='_mma_uc'),)
 
     id = db.Column(db.Integer, primary_key=True)
     movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'))
@@ -2810,13 +2808,18 @@ class Movement(Identity):
             persona = current_user.active_persona
 
         if persona:
-            gms = self.members \
+            gms = MovementMemberAssociation.query \
                 .filter_by(persona=persona) \
+                .filter_by(active=True) \
+                .filter_by(movement=self) \
                 .first()
 
-            if gms and gms.active is True:
-                rv = True
+            rv = True if gms else False
 
+        if rv:
+            print "{} is a member of {}".format(persona, gms.movement if gms else "nothing")
+        else:
+            print "{} is not a member of {}".format(persona, self)
         return rv
 
     def add_member(self, persona):
