@@ -25,11 +25,11 @@ from database import cache, db
 
 UPVOTE_CACHE_DURATION = 5
 ATTENTION_CACHE_DURATION = 60
-TOP_MOVEMENT_CACHE_DURATION = 60 * 5
-MEMBER_COUNT_CACHE_DURATION = 60
-TOP_THOUGHT_CACHE_DURATION = 180
-SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 5
-MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 30
+TOP_MOVEMENT_CACHE_DURATION = 60 * 10
+MEMBER_COUNT_CACHE_DURATION = 60 * 10
+TOP_THOUGHT_CACHE_DURATION = 60 * 6
+SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
+MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
 IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
 
 ATTENTION_MULT = 10
@@ -793,6 +793,10 @@ class Persona(Identity):
             logger.info("Disabling membership of {} in {}".format(self, movement))
             mma.active = False
             mma.role = "left"
+
+        # Reset member count cache
+        cache.delete_memoized(movement.member_count)
+
         return mma
 
     def update_contacts(self, contact_list):
@@ -1533,19 +1537,26 @@ class Thought(Serializable, db.Model):
 
         # Commit Upvote
         db.session.add(self)
-        db.session.commit()
-        cache.delete_memoized(self.upvote_count)
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            logger.exception("Error toggling upvote")
+        else:
+            cache.delete_memoized(self.upvote_count)
 
-        if upvote.state == 0 and \
-            isinstance(self.mindset, Mindspace) and \
-                isinstance(self.mindset.author, Movement):
-            if self.mindset.author.promotion_check(self):
-                db.session.add(self.mindset.author.blog)
-                db.session.commit()
+            if upvote.state == 0 and \
+                isinstance(self.mindset, Mindspace) and \
+                    isinstance(self.mindset.author, Movement):
 
-        logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
+                if self.mindset.author.promotion_check(self):
+                    db.session.add(self.mindset.author.blog)
+                    db.session.commit()
 
-        return upvote
+                cache.delete_memoized(self.mindset.author.mindspace_top_thought)
+
+            logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
+
+            return upvote
 
 
 class PerceptAssociation(db.Model):
