@@ -3049,7 +3049,7 @@ class Movement(Identity):
         """
         from math import log
         c = self.member_count
-        rv = int(c / 100.0 + 2.0 / c + log(c, 1.65))
+        rv = int(c / 100.0 + 2.0 / c + log(c, 1.65)) if c > 0 else 1
         return rv
 
     def set_state(self, new_state):
