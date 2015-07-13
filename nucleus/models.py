@@ -1082,11 +1082,14 @@ class Thought(Serializable, db.Model):
 
             # Other actions are allowed for the Thought author
             # and administrators of its mindset context
-            else:
+            elif action == "delete":
                 if author_id == self.author.id:
                     rv = True
                 elif self.mindset:
                     rv = self.mindset.authorize(action, author_id)
+            else:
+                if author_id == self.author.id:
+                    rv = True
         return rv
 
     @property
