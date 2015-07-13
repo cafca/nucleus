@@ -3000,7 +3000,6 @@ class Movement(Identity):
         """
         return PERCEPT_STATES[self.state][0]
 
-    @property
     @cache.memoize(timeout=MEMBER_COUNT_CACHE_DURATION)
     def member_count(self):
         """Return number of active members in this movement
@@ -3062,7 +3061,7 @@ class Movement(Identity):
             int: Number of votes required
         """
         from math import log
-        c = self.member_count
+        c = self.member_count()
         rv = int(c / 100.0 + 2.0 / c + log(c, 1.65)) if c > 0 else 1
         return rv
 
