@@ -14,6 +14,7 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from soundcloud import Client as SoundcloudClient
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
@@ -179,6 +180,15 @@ class User(UserMixin, db.Model):
     pw_hash = db.Column(db.String(64))
     validated_on = db.Column(db.DateTime)
     signup_code = db.Column(db.String(128))
+
+    # Email preferences
+    email_react_private = db.Column(db.Boolean(), default=True)
+    email_react_reply = db.Column(db.Boolean(), default=True)
+    email_react_mention = db.Column(db.Boolean(), default=True)
+    email_react_follow = db.Column(db.Boolean(), default=False)
+    email_system_security = db.Column(db.Boolean(), default=True)
+    email_system_features = db.Column(db.Boolean(), default=False)
+    email_catchall = db.Column(db.Boolean(), default=False)
 
     # Relations
     active_persona = db.relationship("Persona",
@@ -973,6 +983,7 @@ class MentionNotification(Notification):
     __mapper_args__ = {
         'polymorphic_identity': 'mention_notification',
     }
+    email_pref = "email_react_mention"
 
     def __init__(self, mention, author, url):
         super(MentionNotification, self).__init__()
@@ -986,6 +997,7 @@ class ReplyNotification(Notification):
     __mapper_args__ = {
         'polymorphic_identity': 'reply_notification'
     }
+    email_pref = "email_react_reply"
 
     def __init__(self, parent_thought, author, url):
         super(ReplyNotification, self).__init__()
@@ -999,6 +1011,7 @@ class DialogueNotification(Notification):
     __mapper_args__ = {
         'polymorphic_identity': 'dialogue_notification'
     }
+    email_pref = "email_react_private"
 
     def __init__(self, author, recipient):
         super(DialogueNotification, self).__init__()
@@ -1012,6 +1025,7 @@ class FollowerNotification(Notification):
     __mapper_args__ = {
         'polymorphic_identity': 'follower_notification'
     }
+    email_pref = "email_react_follow"
 
     def __init__(self, author, recipient):
         super(FollowerNotification, self).__init__()
