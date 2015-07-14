@@ -29,6 +29,7 @@ TOP_MOVEMENT_CACHE_DURATION = 60 * 60
 MEMBER_COUNT_CACHE_DURATION = 60 * 60
 TOP_THOUGHT_CACHE_DURATION = 60 * 60
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
+PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
 MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
 IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
 
@@ -679,6 +680,24 @@ class Persona(Identity):
         """Return sha256 hash of this user's email address"""
         return sha256(self.email).hexdigest()
 
+    @cache.memoize(timeout=PERSONA_MOVEMENTS_CACHE_DURATION)
+    def movements(self):
+        """Return movements in which this Persona is an active member
+
+        Returns:
+            list: List of dicts with keys 'id', 'username' for each movement
+        """
+        user_movements = Movement.query \
+            .join(MovementMemberAssociation) \
+            .filter(MovementMemberAssociation.active == True) \
+            .filter(MovementMemberAssociation.persona
+                 == current_user.active_persona) \
+            .order_by(Movement.username)
+
+        rv = [dict(id=m.id, username=m.username)
+            for m in user_movements]
+        return rv
+
     @staticmethod
     def request_persona(persona_id):
         """Return a Persona profile, loading it from Glia if neccessary
@@ -796,6 +815,7 @@ class Persona(Identity):
 
         # Reset member count cache
         cache.delete_memoized(movement.member_count)
+        cache.delete_memoized(self.movements)
 
         return mma
 
@@ -2829,12 +2849,6 @@ class Movement(Identity):
                 .first()
 
             rv = True if gms else False
-
-        if rv:
-            print "{} is a member of {}".format(persona, gms.movement if gms else "nothing")
-        else:
-            print "{} is not a member of {}".format(persona, self)
-        return rv
 
     def add_member(self, persona):
         """Add a Persona as member to this movement
