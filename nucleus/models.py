@@ -772,7 +772,7 @@ class Persona(Identity):
         Returns:
             Updated MovementMemberAssociation object
         """
-        if invitation_code is not None:
+        if invitation_code and len(invitation_code > 0):
             mma = MovementMemberAssociation.query \
                 .filter_by(invitation_code=invitation_code) \
                 .first()
@@ -2760,6 +2760,10 @@ class MovementMemberAssociation(db.Model):
     role = db.Column(db.String(16), default="member")
     invitation_code = db.Column(db.String(32))
 
+    def __repr__(self):
+        return "<Membership <Movement {}> <Persona {}> ({})>".format(
+            self.movement.id[:6], self.persona.id[:6], self.role)
+
 
 t_members = db.Table(
     'members',
@@ -2849,6 +2853,7 @@ class Movement(Identity):
                 .first()
 
             rv = True if gms else False
+        return rv
 
     def add_member(self, persona):
         """Add a Persona as member to this movement
