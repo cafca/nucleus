@@ -12,6 +12,7 @@ from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
+from requests.exceptions import ConnectionError
 from soundcloud import Client as SoundcloudClient
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -2018,9 +2019,13 @@ class LinkPercept(Percept):
                 logger.warning("Please set env var SOUNDCLOUD_CLIENT_ID to enable embeds")
             else:
                 client = SoundcloudClient(client_id=client_id)
-                track = client.get('/resolve', url=self.url)
-                if track:
-                    rv = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{track_id}&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true".format(track_id=track.id)
+                try:
+                    track = client.get('/resolve', url=self.url)
+                except ConnectionError, e:
+                    logger.warning("Error connecting to Soundcloud: {}".format(e))
+                else:
+                    if track:
+                        rv = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{track_id}&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true".format(track_id=track.id)
 
         return rv
 
