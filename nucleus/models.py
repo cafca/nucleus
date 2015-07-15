@@ -1125,6 +1125,9 @@ class Thought(Serializable, db.Model):
             else:
                 if author_id == self.author.id:
                     rv = True
+                elif isinstance(self.author, Movement) \
+                        and author_id == self.author.admin.id:
+                    rv = True
         return rv
 
     @property
@@ -1438,18 +1441,42 @@ class Thought(Serializable, db.Model):
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
-    def top_thought(cls):
+    def top_thought(cls, source=None, min_votes=0):
         """Return up to 10 hottest thoughts as measured by Thought.hot
+
+        Args:
+            source (String): "blog" or "mindspace" to count only thoughts from
+                those sources
+            source (set): Set of Mindset IDs to get content from
 
         Returns:
             list: List of thought ids
         """
         top_post_selection = cls.query.filter(cls.state >= 0)
+
+        if source == "blog":
+            top_post_selection = top_post_selection \
+                .join(Mindset) \
+                .filter(Mindset.kind == "blog")
+
+        elif source == "mindspace":
+            top_post_selection = top_post_selection \
+                .join(Mindset) \
+                .filter(Mindset.kind == "mindspace")
+
+        elif isinstance(source, set):
+            top_post_selection = top_post_selection.filter(
+                Thought.mindset_id.in_(list(source)))
+
         top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
+
         rv = list()
         while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
-            if candidate.upvote_count() > 0:
+            if min_votes > 0:
+                if candidate.upvote_count() >= min_votes:
+                    rv.append(candidate.id)
+            else:
                 rv.append(candidate.id)
         return rv
 
