@@ -6,7 +6,6 @@ import logging
 import os
 import semantic_version
 import re
-import time
 
 from base64 import b64encode, b64decode
 from flask import url_for, current_app
@@ -1481,6 +1480,9 @@ class Thought(Serializable, db.Model):
         rv = list()
         while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
+            if source == "mindspace" and isinstance(candidate.author, Movement) and candidate.author.has_blogged(candidate):
+                continue
+
             if min_votes > 0:
                 if candidate.upvote_count() >= min_votes:
                     rv.append(candidate.id)
