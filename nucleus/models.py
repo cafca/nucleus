@@ -2084,7 +2084,6 @@ class LinkPercept(Percept):
         """
         from urlparse import urlparse
         rv = None
-        timer = ExecutionTimer()
 
         parsed_uri = urlparse(self.url)
         if parsed_uri.netloc == "www.youtube.com":
@@ -2108,8 +2107,6 @@ class LinkPercept(Percept):
                 else:
                     if track:
                         rv = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{track_id}&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true".format(track_id=track.id)
-
-        timer.stop("Generated iframe URL for {}".format(self))
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
