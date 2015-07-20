@@ -1486,7 +1486,7 @@ class Thought(Serializable, db.Model):
                     rv.append(candidate.id)
             else:
                 rv.append(candidate.id)
-        timer.stop("Generated top thought for {}".format(
+        timer.stop("Generated top thought from {}s".format(
             source if isinstance(source, str) else "movement list"))
         return rv
 
