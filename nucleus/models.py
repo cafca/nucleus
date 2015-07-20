@@ -6,6 +6,7 @@ import logging
 import os
 import semantic_version
 import re
+import time
 
 from base64 import b64encode, b64decode
 from flask import url_for, current_app
@@ -20,7 +21,7 @@ from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    CHANGE_TYPES
+    CHANGE_TYPES, ExecutionTimer
 from .helpers import process_attachments
 
 from database import cache, db
@@ -598,10 +599,12 @@ class Persona(Identity):
         Returns:
             integer: Attention as a positive integer
         """
+        timer = ExecutionTimer()
         thoughts = Thought.query \
             .filter_by(author=self)
 
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
+        timer.stop("Generated attention value for {}".format(self))
         return rv
 
     @staticmethod
@@ -698,6 +701,7 @@ class Persona(Identity):
         Returns:
             list: List of dicts with keys 'id', 'username' for each movement
         """
+        timer = ExecutionTimer()
         user_movements = Movement.query \
             .join(MovementMemberAssociation) \
             .filter(MovementMemberAssociation.active == True) \
@@ -707,6 +711,7 @@ class Persona(Identity):
 
         rv = [dict(id=m.id, username=m.username)
             for m in user_movements]
+        timer.stop("Generated movement list for {}".format(self))
         return rv
 
     @staticmethod
@@ -738,9 +743,11 @@ class Persona(Identity):
         Returns:
             list: IDs of Movements
         """
+        timer = ExecutionTimer()
         mov_selection = Movement.top_movements()
         user_movs = [mma.movement.id for mma in self.movement_assocs]
         rv = [m['id'] for m in mov_selection if m['id'] not in user_movs]
+        timer.stop("Generated suggested movements for {}".format(self))
         return rv
 
     def timeout(self):
@@ -1452,6 +1459,7 @@ class Thought(Serializable, db.Model):
         Returns:
             list: List of thought ids
         """
+        timer = ExecutionTimer()
         top_post_selection = cls.query.filter(cls.state >= 0)
 
         if source == "blog":
@@ -1478,6 +1486,8 @@ class Thought(Serializable, db.Model):
                     rv.append(candidate.id)
             else:
                 rv.append(candidate.id)
+        timer.stop("Generated top thought for {}".format(
+            source if isinstance(source, str) else "movement list"))
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
@@ -2030,6 +2040,7 @@ class LinkPercept(Percept):
         """
         from urlparse import urlparse
         rv = None
+        timer = ExecutionTimer()
 
         parsed_uri = urlparse(self.url)
         if parsed_uri.netloc == "www.youtube.com":
@@ -2054,6 +2065,7 @@ class LinkPercept(Percept):
                     if track:
                         rv = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{track_id}&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true".format(track_id=track.id)
 
+        timer.stop("Generated iframe URL for {}".format(self))
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
@@ -2918,6 +2930,7 @@ class Movement(Identity):
         Returns:
             integer: Attention as a positive integer
         """
+        timer = ExecutionTimer()
 
         thoughts = self.blog.index \
             .filter(Thought.state >= 0) \
@@ -2928,6 +2941,7 @@ class Movement(Identity):
             .filter(Thought.kind != "upvote").all()
 
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
+        timer.stop("Generated attention value for {}".format(self))
         return rv
 
     def authorize(self, action, author_id=None):
@@ -3072,11 +3086,13 @@ class Movement(Identity):
         Returns:
             int: member count
         """
+        timer = ExecutionTimer()
         rv = MovementMemberAssociation.query \
             .filter_by(movement=self) \
             .filter_by(active=True) \
             .count()
 
+        timer.stop("Generated member count for {}".format(self))
         return int(rv)
 
     @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
@@ -3086,9 +3102,11 @@ class Movement(Identity):
         Returns:
             list: Dicts with key 'id'
         """
+        timer = ExecutionTimer()
         selection = self.mindspace.index.filter(Thought.state >= 0).all()
         rv = [t.id for t in sorted(
             selection, key=Thought.hot, reverse=True)[:count]]
+        timer.stop("Generated {} mindspace top thought".format(self))
         return rv
 
     def promotion_check(self, thought):
@@ -3155,6 +3173,7 @@ class Movement(Identity):
         Returns:
             list: List of dicts with keys 'id', 'username'
         """
+        timer = ExecutionTimer()
         movements = Movement.query \
             .join(MovementMemberAssociation) \
             .order_by(func.count(MovementMemberAssociation.persona_id)) \
@@ -3168,6 +3187,7 @@ class Movement(Identity):
                 "username": m.username
             })
 
+        timer.stop("Generated top movements")
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):

@@ -1,5 +1,6 @@
 import logging
 import blinker
+import time
 
 ERROR = {
     "MISSING_MESSAGE_TYPE": (1, "No message type found."),
@@ -63,6 +64,15 @@ ALLOWED_COLORS = {
 CHANGE_TYPES = ("insert", "read", "update", "delete")
 
 ATTACHMENT_KINDS = ("link", "linkedpicture", "text")
+
+
+class ExecutionTimer(object):
+    def __init__(self):
+        self.start = time.clock()
+
+    def stop(self, msg):
+        end = (time.clock() - self.start) * 1000.0
+        logger.info("{} in {} ms".format(msg, end))
 
 
 class InvalidSignatureError(Exception):
