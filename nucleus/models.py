@@ -209,6 +209,44 @@ class User(UserMixin, db.Model):
         pw_hash = sha256(password).hexdigest()
         return self.pw_hash == pw_hash
 
+    def email_allowed(self, notification):
+        """Return True if this user allows the notification to be sent by email
+
+        Args:
+            notification (Notification): Notification object
+
+        Returns:
+            Boolean: True if notification should be sent as email
+        """
+        rv = False
+        if not self.email_catchall:
+            if notification.email_pref:
+                if getattr(self, notification.email_pref) is True:
+                    c = Notification.query \
+                        .filter_by(recipient=notification.recipient) \
+                        .filter_by(url=notification.url) \
+                        .filter_by(unread=True) \
+                        .filter(Notification.id != notification.id)
+
+                    if c.count() == 0:
+                        rv = True
+                    else:
+                        logger.info(
+                            "{} not sent by email because {} unread notifications point to same url '{}'".format(
+                                notification, c.count(), notification.url))
+                else:
+                    logger.info(
+                        "{} not sent by email because of '{}'".format(
+                            notification, notification.email_pref))
+            else:
+                logger.warning(
+                    "{} is missing email_pref attribute".format(notification))
+        else:
+            logger.info(
+                "{} not sent because of email catchall pref".format(
+                    notification))
+        return rv
+
     def get_id(self):
         return self.id
 
@@ -976,6 +1014,10 @@ class Notification(db.Model):
     text = db.Column(db.Text)
     unread = db.Column(db.Boolean(), default=True)
     url = db.Column(db.Text, default="/")
+
+    # Set this to the name of the attribute on User model (that is, the email
+    # preference) that determines whether the notification sends emails
+    email_pref = None
 
     # Relations
     recipient = db.relationship('Identity',

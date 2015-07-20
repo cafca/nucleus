@@ -72,7 +72,7 @@ class ExecutionTimer(object):
 
     def stop(self, msg):
         end = (time.clock() - self.start) * 1000.0
-        logger.info("{} in {} ms".format(msg, end))
+        logger.debug("{} in {} ms".format(msg, end))
 
 
 class InvalidSignatureError(Exception):
