@@ -1418,8 +1418,8 @@ class Thought(Serializable, db.Model):
 
         return data
 
-    def get_absolute_url(self, mindset_id):
-        return url_for('web.thought', mindset_id=mindset_id, id=self.id)
+    def get_absolute_url(self):
+        return url_for('web.thought', id=self.id)
 
     def get_state(self):
         """
