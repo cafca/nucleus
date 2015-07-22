@@ -1114,6 +1114,8 @@ class Thought(Serializable, db.Model):
     text = db.Column(db.Text)
     posted_from = db.Column(db.String(64))
 
+    _upvotes = db.Column(db.Integer)
+
     # Relations
     author = db.relationship('Identity',
         backref=db.backref('thoughts'),
@@ -1584,32 +1586,25 @@ class Thought(Serializable, db.Model):
         return self.children.filter_by(kind="upvote")
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
-    def upvote_count(self, from_movement=None):
+    def upvote_count(self):
         """
         Return the number of verified upvotes this Thought has receieved
-
-        Args:
-            from_movement (String): Only count upvotes from members of the
-                movement with this ID
 
         Returns:
             Int: Number of upvotes
         """
-        uv = self.upvotes \
-            .filter(Upvote.state >= 0)
+        rv = self._upvotes
 
-        if current_app.config["UPVOTES_FILTER_DISTINCT_USERS"]:
-            uv = uv \
-                .join(Persona) \
-                .join(User, Persona.user_id == User.id) \
-                .distinct(User.id)
-
-        if from_movement:
-            uv = uv \
-                .join(MovementMemberAssociation) \
-                .filter(MovementMemberAssociation.movement_id == from_movement)
-
-        return uv.count()
+        if rv is None:
+            self._upvotes = self.upvotes.filter(Upvote.state >= 0).count()
+            rv = self._upvotes
+            db.session.add(self)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                logger.exception("Error initial upvote count")
+                db.session.rollback()
+        return rv
 
     def text_percepts(self):
         """Return TextPercepts of this Thought"""
@@ -1647,12 +1642,19 @@ class Thought(Serializable, db.Model):
         # Check whether Upvote has been previously issued
         upvote = self.upvotes.filter_by(author=author).first()
         if upvote is not None:
-            old_state = upvote.get_state()
-            upvote.set_state(-1) if upvote.state == 0 else upvote.set_state(0)
+            if upvote.state == 0:
+                upvote.set_state(-1)
+                self._upvotes -= 1
+                logger.info("Disabling {}".format(upvote))
+            else:
+                upvote.set_state(0)
+                self._upvotes += 1
+                logger.info("Enabling {}".format(upvote))
         else:
-            old_state = False
             upvote = Upvote(id=uuid4().hex, author=author, parent=self, state=0)
             self.children.append(upvote)
+            self._upvotes += 1
+            logger.info("Adding {}".format(upvote))
 
         # Commit Upvote
         db.session.add(self)
@@ -1672,9 +1674,6 @@ class Thought(Serializable, db.Model):
                     db.session.commit()
 
                 cache.delete_memoized(self.mindset.author.mindspace_top_thought)
-
-            logger.info("{verb} {obj}".format(verb="Toggled" if old_state else "Added", obj=upvote, ))
-
             return upvote
 
 
@@ -3161,7 +3160,7 @@ class Movement(Identity):
             Thought: The new blog post
         """
         rv = None
-        if thought.upvote_count(from_movement=self.id) >= self.required_votes() and not self.has_blogged(thought):
+        if thought.upvote_count() >= self.required_votes() and not self.has_blogged(thought):
             rv = Thought.clone(thought, self, self.blog)
             movement_chat.send(self, room_id=self.mindspace.id, message="New promotion! Check the blog")
         return rv
@@ -3336,6 +3335,6 @@ class Movement(Identity):
         if self.has_blogged(thought):
             rv = 1
         else:
-            rv = min([float(thought.upvote_count(from_movement=self.id)) /
+            rv = min([float(thought.upvote_count()) /
                 self.required_votes(), 1.0])
         return rv
