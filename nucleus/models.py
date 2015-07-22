@@ -478,22 +478,6 @@ class Identity(Serializable, db.Model):
         self.crypt_private = str(rsa2)
         self.crypt_public = str(rsa2.public_key)
 
-    def has_blogged(self, thought):
-        """Return True if this Identity has blogged thought
-
-        When a post is blogged, the blog post is created as a reply to the
-        original post, hence this is checking whether this Identity has replied
-        to the thought on its blog
-
-        Args:
-            thought (Thought): Thought to check
-        """
-        count = self.blog.index \
-            .filter(Thought.parent == thought) \
-            .filter(Thought.author == self) \
-            .count()
-        return count > 0
-
     def notification_list(self, limit=5):
         return self.notifications \
             .filter_by(unread=True) \
@@ -1115,6 +1099,7 @@ class Thought(Serializable, db.Model):
     posted_from = db.Column(db.String(64))
 
     _upvotes = db.Column(db.Integer)
+    _blogged = db.Column(db.Boolean, default=False)
 
     # Relations
     author = db.relationship('Identity',
@@ -1524,14 +1509,13 @@ class Thought(Serializable, db.Model):
         rv = list()
         while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
-            if source == "mindspace" and isinstance(candidate.author, Movement) and candidate.author.has_blogged(candidate):
-                continue
-
-            if min_votes > 0:
-                if candidate.upvote_count() >= min_votes:
+            # Don't return blogged thoughts for source "mindspace"
+            if source != "mindspace" or not candidate._blogged:
+                if min_votes > 0:
+                    if candidate.upvote_count() >= min_votes:
+                        rv.append(candidate.id)
+                else:
                     rv.append(candidate.id)
-            else:
-                rv.append(candidate.id)
         timer.stop("Generated top thought from {}s".format(
             source if isinstance(source, str) else "movement list"))
         return rv
@@ -3160,9 +3144,13 @@ class Movement(Identity):
             Thought: The new blog post
         """
         rv = None
-        if thought.upvote_count() >= self.required_votes() and not self.has_blogged(thought):
-            rv = Thought.clone(thought, self, self.blog)
-            movement_chat.send(self, room_id=self.mindspace.id, message="New promotion! Check the blog")
+        if not thought._blogged and thought.mindset \
+                and thought.mindset.kind == "mindspace":
+            if thought.upvote_count() >= self.required_votes():
+                rv = Thought.clone(thought, self, self.blog)
+                thought._blogged = True
+                movement_chat.send(self, room_id=self.mindspace.id,
+                    message="New promotion! Check the blog")
         return rv
 
     def remove_member(self, persona):
@@ -3332,7 +3320,7 @@ class Movement(Identity):
         Returns:
             float: Ratio of required votes already cast
         """
-        if self.has_blogged(thought):
+        if thought._blogged:
             rv = 1
         else:
             rv = min([float(thought.upvote_count()) /
