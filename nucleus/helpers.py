@@ -5,6 +5,9 @@ from datetime import datetime
 from goose import Goose
 from sqlalchemy import inspect
 
+from nucleus.nucleus import ExecutionTimer
+from nucleus.nucleus.database import cache
+
 
 # For calculating scores
 epoch = datetime.utcfromtimestamp(0)
@@ -169,3 +172,30 @@ def process_attachments(text):
         percepts.add(linkpercept)
 
     return (text, percepts)
+
+
+@cache.memoize(timeout=60 * 60 * 24)
+def recent_thoughts():
+    """Return 10 most recent Thoughts
+
+    Cache is reset when calling Thought.create_from_input
+    or Thought.set_state
+
+    Returns:
+        list: List of IDs
+    """
+    from nucleus.nucleus.models import Thought, Movement, Mindset
+    timer = ExecutionTimer()
+    res = Thought.query \
+        .filter_by(state=0) \
+        .filter_by(kind="thought") \
+        .order_by(Thought.created.desc()) \
+        .join(Mindset, Thought.mindset) \
+        .join(Movement, Mindset.author) \
+        .filter(Movement.private == False) \
+        .limit(10) \
+        .all()
+
+    rv = [t.id for t in res]
+    timer.stop("Generated recent thoughts list")
+    return rv

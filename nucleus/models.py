@@ -21,7 +21,7 @@ from uuid import uuid4
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES, ExecutionTimer
-from .helpers import process_attachments
+from .helpers import process_attachments, recent_thoughts
 
 from database import cache, db
 
@@ -30,6 +30,7 @@ ATTENTION_CACHE_DURATION = 60 * 10
 TOP_MOVEMENT_CACHE_DURATION = 60 * 60
 MEMBER_COUNT_CACHE_DURATION = 60 * 60
 TOP_THOUGHT_CACHE_DURATION = 60 * 60
+RECENT_THOUGHT_CACHE_DURATION = 60 * 60 * 24
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
 PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
 MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
@@ -1385,6 +1386,8 @@ class Thought(Serializable, db.Model):
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
+        cache.delete_memoized(recent_thoughts)
+
         return {
             "instance": instance,
             "notifications": notifications
@@ -1468,6 +1471,7 @@ class Thought(Serializable, db.Model):
             raise ValueError("{} ({}) is not a valid thought state").format(
                 new_state, type(new_state))
         else:
+            cache.delete_memoized(recent_thoughts)
             self.state = new_state
 
     @property
