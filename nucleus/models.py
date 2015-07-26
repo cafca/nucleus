@@ -194,7 +194,8 @@ class User(UserMixin, db.Model):
 
     # Relations
     active_persona = db.relationship("Persona",
-        primaryjoin="persona.c.id==user.c.active_persona_id", post_update=True)
+        primaryjoin="persona.c.id==user.c.active_persona_id", post_update=True,
+        lazy="joined")
     active_persona_id = db.Column(db.String(32),
         db.ForeignKey('persona.id', name="fk_active_persona"))
 
