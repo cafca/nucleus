@@ -27,13 +27,18 @@ from database import cache, db
 
 UPVOTE_CACHE_DURATION = 60 * 10
 ATTENTION_CACHE_DURATION = 60 * 10
+
 TOP_MOVEMENT_CACHE_DURATION = 60 * 60
 MEMBER_COUNT_CACHE_DURATION = 60 * 60
+REPOST_MINDSET_CACHE_DURATION = 60 * 60 * 24
+
 TOP_THOUGHT_CACHE_DURATION = 60 * 60
 RECENT_THOUGHT_CACHE_DURATION = 60 * 60 * 24
+MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
+
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
 PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
-MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
+
 IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
 
 ATTENTION_MULT = 10
@@ -737,6 +742,24 @@ class Persona(Identity):
         timer.stop("Generated movement list for {}".format(self))
         return rv
 
+    @cache.memoize(timeout=REPOST_MINDSET_CACHE_DURATION)
+    def repost_mindsets(self):
+        """Return list of mindset IDs in which this persona might post
+
+        Returns:
+            list: mindset IDs
+        """
+
+        rv = []
+        rv.append(self.mindspace)
+        rv.append(self.blog)
+
+        # Is a movement member
+        rv = rv + Mindset.query \
+            .join(Movement, Movement.mindspace_id == Mindset.id) \
+            .filter(Movement.id.in_([m["id"] for m in self.movements()])).all()
+        return [ms.id for ms in rv]
+
     @staticmethod
     def request_persona(persona_id):
         """Return a Persona profile, loading it from Glia if neccessary
@@ -854,9 +877,10 @@ class Persona(Identity):
             mma.active = False
             mma.role = "left"
 
-        # Reset member count cache
+        # Reset caches
         cache.delete_memoized(movement.member_count)
         cache.delete_memoized(self.movements)
+        cache.delete_memoized(self.repost_mindsets)
 
         return mma
 
