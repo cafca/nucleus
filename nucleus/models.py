@@ -1046,9 +1046,9 @@ class MentionNotification(Notification):
 
     def __init__(self, mention, author, url):
         super(MentionNotification, self).__init__()
-        self.text = "{} mentioned you in a Thought".format(author.username),
-        self.url = url,
-        self.source = author.username,
+        self.text = "{} mentioned you in a Thought".format(author.username)
+        self.url = url
+        self.source = author.username
         self.recipient = mention.identity
 
 
@@ -1060,9 +1060,9 @@ class ReplyNotification(Notification):
 
     def __init__(self, parent_thought, author, url):
         super(ReplyNotification, self).__init__()
-        self.text = "{} replied to your Thought".format(author.username),
-        self.url = url,
-        self.source = author.username,
+        self.text = "{} replied to your Thought".format(author.username)
+        self.url = url
+        self.source = author.username
         self.recipient = parent_thought.author
 
 
@@ -1074,9 +1074,9 @@ class DialogueNotification(Notification):
 
     def __init__(self, author, recipient):
         super(DialogueNotification, self).__init__()
-        self.text = "{} sent you a private message".format(author.username),
-        self.url = url_for("web.persona", id=author.id),
-        self.source = author.username,
+        self.text = "{} sent you a private message".format(author.username)
+        self.url = url_for("web.persona", id=author.id)
+        self.source = author.username
         self.recipient = recipient
 
 
