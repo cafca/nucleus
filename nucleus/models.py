@@ -238,18 +238,18 @@ class User(UserMixin, db.Model):
                     if c.count() == 0:
                         rv = True
                     else:
-                        logger.info(
+                        logger.debug(
                             "{} not sent by email because {} unread notifications point to same url '{}'".format(
                                 notification, c.count(), notification.url))
                 else:
-                    logger.info(
+                    logger.debug(
                         "{} not sent by email because of '{}'".format(
                             notification, notification.email_pref))
             else:
                 logger.warning(
                     "{} is missing email_pref attribute".format(notification))
         else:
-            logger.info(
+            logger.debug(
                 "{} not sent because of email catchall pref".format(
                     notification))
         return rv
@@ -1364,7 +1364,7 @@ class Thought(Serializable, db.Model):
             if current_user.is_anonymous():
                 raise ValueError("Thought author can't be anonymous ({}).".format(
                     author))
-            logger.info("Set new thought author to active persona")
+            logger.debug("Set new thought author to active persona")
             author = current_user.active_persona
 
         if mindset is not None and isinstance(mindset, Dialogue):
@@ -1385,17 +1385,17 @@ class Thought(Serializable, db.Model):
         if extract_percepts:
             text, percepts = process_attachments(instance.text)
             instance.text = text
-            logger.info("Extracted {} percepts from title".format(len(percepts)))
+            logger.debug("Extracted {} percepts from title".format(len(percepts)))
 
             if longform and len(longform) > 0:
                 lftext, lfpercepts = process_attachments(longform)
                 percepts = percepts.union(lfpercepts)
-                logger.info("Extracted {} percepts from longform".format(len(percepts)))
+                logger.debug("Extracted {} percepts from longform".format(len(percepts)))
 
                 lftext_percept = TextPercept.get_or_create(lftext,
                     source=longform_source)
                 percepts.add(lftext_percept)
-                logger.info("Attached longform content")
+                logger.debug("Attached longform content")
 
             for percept in percepts:
                 if isinstance(percept, Mention):
@@ -1405,7 +1405,7 @@ class Thought(Serializable, db.Model):
                 assoc = PerceptAssociation(
                     thought=instance, percept=percept, author=author)
                 instance.percept_assocs.append(assoc)
-                logger.info("Attached {} to new {}".format(percept, instance))
+                logger.debug("Attached {} to new {}".format(percept, instance))
 
         if parent and parent.author != author:
             notifications.append(ReplyNotification(parent_thought=parent,
@@ -2004,7 +2004,7 @@ class LinkedPicturePercept(Percept):
 
         inst = cls.query.filter_by(id=url_hash).first()
         if inst is None:
-            logger.info("Creating new linked picture for hash {}".format(
+            logger.debug("Creating new linked picture for hash {}".format(
                 url_hash))
             inst = cls(id=url_hash, url=url, *args, **kwargs)
 
