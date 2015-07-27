@@ -1380,7 +1380,8 @@ class Thought(Serializable, db.Model):
             parent=parent,
             created=thought_created,
             modified=thought_created,
-            mindset=mindset)
+            mindset=mindset,
+            _upvotes=0)
 
         if extract_percepts:
             text, percepts = process_attachments(instance.text)
