@@ -1658,16 +1658,16 @@ class Thought(Serializable, db.Model):
             if upvote.state == 0:
                 upvote.set_state(-1)
                 self._upvotes -= 1
-                logger.info("Disabling {}".format(upvote))
+                logger.info("Disabling upvote by {} on {}".format(author, self))
             else:
                 upvote.set_state(0)
                 self._upvotes += 1
-                logger.info("Enabling {}".format(upvote))
+                logger.info("Enabling upvote by {} on {}".format(author, self))
         else:
             upvote = Upvote(id=uuid4().hex, author=author, parent=self, state=0)
             self.children.append(upvote)
             self._upvotes += 1
-            logger.info("Adding {}".format(upvote))
+            logger.info("Adding upvote by {} on {}".format(author, self))
 
         # Commit Upvote
         db.session.add(self)
