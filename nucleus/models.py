@@ -3177,10 +3177,15 @@ class Movement(Identity):
         if not thought._blogged and thought.mindset \
                 and thought.mindset.kind == "mindspace":
             if thought.upvote_count() >= self.required_votes():
-                rv = Thought.clone(thought, self, self.blog)
+                logger.info("Promoting {} to {} blog".format(thought, self))
+                clone = Thought.clone(thought, self, self.blog)
+                upvote = Upvote(id=uuid4().hex,
+                    author=self, parent=clone, state=0)
+                clone.children.append(upvote)
                 thought._blogged = True
                 movement_chat.send(self, room_id=self.mindspace.id,
                     message="New promotion! Check the blog")
+                rv = clone
         return rv
 
     def remove_member(self, persona):
