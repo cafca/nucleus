@@ -3353,6 +3353,9 @@ class Movement(Identity):
         if thought._blogged:
             rv = 1
         else:
-            rv = min([float(thought.upvote_count()) /
-                self.required_votes(), 1.0])
+            req = self.required_votes()
+            rv = 1
+            if req > 0:
+                rv = min([float(thought.upvote_count()) /
+                    self.required_votes(), 1.0])
         return rv
