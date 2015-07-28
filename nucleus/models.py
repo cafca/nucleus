@@ -2440,7 +2440,9 @@ class Mindset(Serializable, db.Model):
     _update_required = ["id", "modified", "index"]
 
     id = db.Column(db.String(32), primary_key=True)
-    modified = db.Column(db.DateTime, default=datetime.datetime.utcnow())
+    modified = db.Column(db.DateTime,
+        server_default=func.timezone('UTC', func.current_timestamp()),
+        onupdate=func.timezone('UTC', func.current_timestamp()))
     kind = db.Column(db.String(16))
     state = db.Column(db.Integer, default=0)
 
