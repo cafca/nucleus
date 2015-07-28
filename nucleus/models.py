@@ -14,7 +14,7 @@ from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
 from requests.exceptions import ConnectionError
 from soundcloud import Client as SoundcloudClient
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from uuid import uuid4
 
@@ -38,6 +38,7 @@ MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
 
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
 PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
+CONVERSATION_LIST_CACHE_DURATION = 60 * 60 * 24
 
 IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
 
@@ -690,6 +691,38 @@ class Persona(Identity):
             request_objects.send(Persona.create_from_changeset, message=req)
 
         return p
+
+    @cache.memoize(timeout=CONVERSATION_LIST_CACHE_DURATION)
+    def conversation_list(self):
+        """Return a list of conversations this persona had
+
+        Returns:
+            list: List of dicts with keys
+                persona_id: id of the other side of the conversation
+                persona_username: respective username
+                modified: last thought in the conversation
+        """
+        timer = ExecutionTimer()
+        convs_query = Dialogue.query \
+            .filter(or_(
+                Dialogue.author == self,
+                Dialogue.other == self
+            )).all()
+
+        convs = list()
+        for c in convs_query:
+            last_post = c.index.order_by('created DESC').first()
+            if last_post:
+                other = c.other if c.author == self else c.author
+                conv_dict = dict(
+                    persona_id=other.id,
+                    persona_username=other.username,
+                    modified=last_post.created)
+                convs.append(conv_dict)
+        convs = sorted(convs, reverse=True, key=lambda c: c["modified"]
+            if c["modified"] else datetime.datetime.utcfromtimestamp(0))
+        timer.stop("Generated conversation list for {}".format(self))
+        return convs
 
     def export(self, exclude=[], include=None, update=False):
         exclude = set(exclude + ["contacts", "movements", "blogs_followed"])
@@ -1413,6 +1446,11 @@ class Thought(Serializable, db.Model):
                 author=author, url=url_for('web.thought', id=thought_id)))
 
         cache.delete_memoized(recent_thoughts)
+        if instance.mindset and isinstance(instance.mindset, Dialogue):
+            logger.info("Deleting conversation list cache for all parties in {}"
+                .format(instance.mindset))
+            cache.delete_memoized(instance.mindset.author.conversation_list)
+            cache.delete_memoized(instance.mindset.other.conversation_list)
 
         return {
             "instance": instance,
