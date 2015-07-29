@@ -1248,15 +1248,15 @@ class Thought(Serializable, db.Model):
             Thought: The new copy
         """
         thought_id = uuid4().hex
-        thought_modified = datetime.datetime.utcnow()
+        thought_cloned = datetime.datetime.utcnow()
 
         new_thought = cls(
             id=thought_id,
             text=thought.text,
             author=author,
             parent=thought,
-            created=thought.created,
-            modified=thought_modified,
+            created=thought_cloned,
+            modified=thought_cloned,
             mindset=mindset)
 
         for pa in thought.percept_assocs:
