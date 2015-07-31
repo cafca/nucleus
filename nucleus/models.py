@@ -869,7 +869,7 @@ class Persona(Identity):
         Returns:
             Updated MovementMemberAssociation object
         """
-        if invitation_code and len(invitation_code > 0):
+        if invitation_code and len(invitation_code) > 0:
             mma = MovementMemberAssociation.query \
                 .filter_by(invitation_code=invitation_code) \
                 .first()
