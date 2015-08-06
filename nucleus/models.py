@@ -1561,19 +1561,24 @@ class Thought(Serializable, db.Model):
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
-    def top_thought(cls, source=None, min_votes=0):
+    def top_thought(cls, source=None, min_votes=0, filter_blogged=False):
         """Return up to 10 hottest thoughts as measured by Thought.hot
 
         Args:
             source (String): "blog" or "mindspace" to count only thoughts from
                 those sources
             source (set): Set of Mindset IDs to get content from
+            filter_blogged (Boolean): Don't include Thought if Thought.blogged
+                is True
 
         Returns:
             list: List of thought ids
         """
         timer = ExecutionTimer()
         top_post_selection = cls.query.filter(cls.state >= 0)
+
+        if filter_blogged:
+            top_post_selection = top_post_selection.filter_by(_blogged=False)
 
         if source == "blog":
             top_post_selection = top_post_selection \
