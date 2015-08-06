@@ -748,6 +748,21 @@ class Persona(Identity):
 
         return data
 
+    @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
+    def frontpage_sources(self):
+        """Return mindset IDs that provide posts for this Persona's frontpage
+
+        Returns:
+            list: List of IDs
+        """
+        source_idents = set()
+        for source in self.blogs_followed:
+            if source.active_member():
+                source_idents.add(source.mindspace_id)
+            source_idents.add(source.blog_id)
+
+        return source_idents
+
     def get_absolute_url(self):
         return url_for('web.persona', id=self.id)
 
@@ -851,6 +866,7 @@ class Persona(Identity):
             following = True
             logger.info("{} is now following {}".format(self, ident))
 
+        cache.delete_memoized(self.frontpage_sources)
         return following
 
     def toggle_movement_membership(self, movement, role="member",
@@ -914,6 +930,7 @@ class Persona(Identity):
         cache.delete_memoized(movement.member_count)
         cache.delete_memoized(self.movements)
         cache.delete_memoized(self.repost_mindsets)
+        cache.delete_memoized(self.frontpage_sources)
 
         return mma
 
