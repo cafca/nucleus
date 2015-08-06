@@ -12,7 +12,7 @@ from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
 from keyczar.keys import RsaPrivateKey, RsaPublicKey
-from requests.exceptions import ConnectionError
+from requests.exceptions import ConnectionError, HTTPError
 from soundcloud import Client as SoundcloudClient
 from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
@@ -2175,7 +2175,7 @@ class LinkPercept(Percept):
                 client = SoundcloudClient(client_id=client_id)
                 try:
                     track = client.get('/resolve', url=self.url)
-                except ConnectionError, e:
+                except (ConnectionError, HTTPError), e:
                     logger.warning("Error connecting to Soundcloud: {}".format(e))
                 else:
                     if track:
