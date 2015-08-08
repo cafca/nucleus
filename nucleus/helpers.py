@@ -162,10 +162,13 @@ def process_attachments(text):
 
             # Extract article contents as new Percept
             if len(page.cleaned_text) > 300:
-                textpercept = TextPercept.get_or_create(page.cleaned_text)
-                textpercept.source = link.url
+                # Temporarily disable automatic text attachment
 
-                percepts.add(textpercept)
+                # textpercept = TextPercept.get_or_create(page.cleaned_text)
+                # textpercept.source = link.url
+
+                # percepts.add(textpercept)
+                pass
 
             if len(text) == 0:
                 text = page.title
