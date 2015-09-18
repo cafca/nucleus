@@ -4,6 +4,9 @@ import re
 from datetime import datetime
 from goose import Goose
 from sqlalchemy import inspect
+from sqlalchemy.sql import expression
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.types import DateTime
 
 from nucleus.nucleus import ExecutionTimer
 from nucleus.nucleus.database import cache
@@ -14,6 +17,15 @@ epoch = datetime.utcfromtimestamp(0)
 epoch_seconds = lambda dt: (dt - epoch).total_seconds() - 1356048000
 
 logger = logging.getLogger('nucleus')
+
+
+class utcnow(expression.FunctionElement):
+    type = DateTime()
+
+
+@compiles(utcnow, 'postgresql')
+def pg_utcnow(element, compiler, **kw):
+    return "TIMEZONE('utc', CURRENT_TIMESTAMP)"
 
 
 def find_links(text):
