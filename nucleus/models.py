@@ -1,5 +1,6 @@
 
 import datetime
+import json
 import iso8601
 import logging
 import os
@@ -19,9 +20,8 @@ from uuid import uuid4
 
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
-    ExecutionTimer
+    CHANGE_TYPES, ExecutionTimer
 from .helpers import process_attachments, recent_thoughts
-from .serializable import Serializable
 
 from database import cache, db
 
@@ -47,6 +47,130 @@ ATTENTION_MULT = 10
 request_objects = notification_signals.signal('request-objects')
 movement_chat = notification_signals.signal('movement-chat')
 logger = logging.getLogger('nucleus')
+
+
+class Serializable():
+    """ Make SQLAlchemy models json serializable
+
+    Attributes:
+        _insert_required: Default attributes to include in export
+        _update_required: Default attributes to include in export with update=True
+    """
+    _insert_required = ["id", "modified"]
+    _update_required = ["id", "modified"]
+
+    id = None
+    modified = None
+
+    def authorize(self, action, author_id=None):
+        """Return True if this object authorizes `action` for `author_id`
+
+        Args:
+            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
+            author_id (String): Persona ID that wants to perform the action
+
+        Returns:
+            Boolean: True if authorized
+        """
+        if action not in CHANGE_TYPES:
+            return False
+        return True
+
+    @staticmethod
+    def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
+        """Create a new instance from a changeset.
+
+        Args:
+            changeset (dict): Dictionary of model values. Requires all keys
+                defined in cls._insert_required with class-specific values.
+            stub (Serializable): (Optional) model instance whose values will be
+                overwritten with those defined in changeset.
+            update_sender (Persona): (Optional) author of this changeset. Will be
+                used as recipient of subsequent object requests.
+            update_recipient (Persona): (Optional) recipient of this changeset.
+                Will be used as sender of subsequent object requests.
+
+        Returns:
+            Serializable: Instance created from changeset
+
+        Raises:
+            KeyError: Missing key in changeset
+            TypeError: Argument has wrong type
+            ValueError: Argument value cannot be processed
+        """
+        raise NotImplementedError()
+
+    def export(self, exclude=[], include=None, update=False):
+        """Return this object as a dict.
+
+        Args:
+            update (Bool): Export only attributes defined in `self._update_required`
+
+        Returns:
+            Dict: The serialized object
+
+        Raises:
+            KeyError: If a key was not found
+        """
+        attr_names = self._update_required if update is True else self._insert_required
+
+        if include:
+            attr_names = include
+        else:
+            attr_names = [a for a in attr_names if a not in exclude]
+
+        return {attr: str(getattr(self, attr)) for attr in attr_names}
+
+    def json(self, update=False):
+        """Return this object JSON encoded.
+
+        Args:
+            update (Boolean): (optiona) See export docstring
+
+        Returns:
+            Str: JSON-encoded serialized instance
+        """
+        return json.dumps(self.export(update=update), indent=4)
+
+    def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
+        """Update self with new values in changeset
+
+        Args:
+            changeset (dict): Dictionary of model values. Requires all keys
+                defined in self._update_required with class-specific values.
+            update_sender (Persona): (Optional) author of this changeset. Will be
+                used as recipient of subsequent object requests.
+            update_recipient (Persona): (Optional) recipient of this changeset.
+                Will be used as sender of subsequent object requests.
+
+        Returns:
+            Serializable: Updated instance
+
+        Raises:
+            KeyError: Missing key in changeset
+            TypeError: Argument has wrong type
+            ValueError: Argument value cannot be processed
+        """
+        raise NotImplementedError()
+
+    @classmethod
+    def validate_changeset(cls, changeset, update=False):
+        """Check whether changeset contains all keys defined as required for this class.
+
+        Args:
+            changeset(dict): See created_from_changeset, update_from_changeset
+            update(Bool): If True use cls._update_required instead of cls._insert_required
+
+        Returns:
+            List: Missing keys
+        """
+        required_keys = cls._update_required if update else cls._insert_required
+        missing = list()
+
+        for k in required_keys:
+            if k not in changeset.keys():
+                missing.append(k)
+        return missing
 
 
 class User(UserMixin, db.Model):
