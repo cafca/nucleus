@@ -21,7 +21,7 @@ from uuid import uuid4
 from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     PersonaNotFoundError, UnauthorizedError, notification_signals, \
     CHANGE_TYPES, ExecutionTimer
-from .helpers import process_attachments, recent_thoughts, utcnow
+from .helpers import process_attachments, recent_thoughts
 
 from database import cache, db
 
@@ -2500,9 +2500,7 @@ class Mindset(Serializable, db.Model):
     _update_required = ["id", "modified", "index"]
 
     id = db.Column(db.String(32), primary_key=True)
-    modified = db.Column(db.DateTime,
-        server_default=utcnow(),
-        onupdate=utcnow())
+    modified = db.Column(db.DateTime)
     kind = db.Column(db.String(16))
     state = db.Column(db.Integer, default=0)
 
