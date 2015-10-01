@@ -8,6 +8,7 @@ import semantic_version
 import re
 
 from base64 import b64encode, b64decode
+from collections import defaultdict
 from flask import url_for, current_app
 from flask.ext.login import current_user, UserMixin
 from hashlib import sha256
@@ -711,7 +712,7 @@ class Persona(Identity):
 
         convs = list()
         for c in convs_query:
-            last_post = c.index.order_by('created DESC').first()
+            last_post = c.index.order_by(Thought.created.desc()).first()
             if last_post:
                 other = c.other if c.author == self else c.author
                 conv_dict = dict(
@@ -1180,7 +1181,7 @@ class Thought(Serializable, db.Model):
     # Relations
     author = db.relationship('Identity',
         backref=db.backref('thoughts'),
-        primaryjoin="identity.c.id==thought.c.author_id")
+        primaryjoin="identity.c.id==thought.c.author_id", lazy="joined")
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
 
     mindset = db.relationship('Mindset',
@@ -1190,13 +1191,13 @@ class Thought(Serializable, db.Model):
 
     parent = db.relationship('Thought',
         primaryjoin='and_(remote(Thought.id)==Thought.parent_id, Thought.state>=0)',
-        backref=db.backref('children', lazy="dynamic"),
+        backref=db.backref('children', lazy="joined"),
         remote_side='Thought.id')
     parent_id = db.Column(db.String(32), db.ForeignKey('thought.id'))
 
     percept_assocs = db.relationship("PerceptAssociation",
         backref="thought",
-        lazy="dynamic")
+        lazy="joined")
 
     vesicles = db.relationship('Vesicle',
         secondary='thought_vesicles',
@@ -1221,7 +1222,7 @@ class Thought(Serializable, db.Model):
         if Serializable.authorize(self, action, author_id=author_id):
             # Thoughts may be read by anyone who may see their mindset/parent
             if action == "read":
-                if self.mindset:
+                if self.mindset is not None:
                     rv = self.mindset.authorize("read", author_id)
                 else:
                     rv = self.parent.authorize("read", author_id)
@@ -1243,12 +1244,10 @@ class Thought(Serializable, db.Model):
 
     @property
     def attachments(self):
-        pa = self.percept_assocs \
-            .join(Percept)
-
-        rv = dict()
-        for category in ATTACHMENT_KINDS:
-            rv[category] = pa.filter(Percept.kind == category).all()
+        rv = defaultdict(list)
+        for pa in self.percept_assocs:
+            if pa.percept.kind in ATTACHMENT_KINDS:
+                rv[pa.percept.kind].append(pa)
 
         return rv
 
@@ -1285,7 +1284,7 @@ class Thought(Serializable, db.Model):
 
     @property
     def comments(self):
-        return self.children.filter_by(kind="thought")
+        return [thought for thought in self.children if thought.kind == "thought"]
 
     def comment_count(self, iter=15):
         """
@@ -1299,8 +1298,9 @@ class Thought(Serializable, db.Model):
         rv = 0
         iter = iter - 1
         if iter > 0:
-            for comment in self.comments.filter_by(state=0):
-                rv += comment.comment_count(iter=iter) + 1
+            for comment in self.comments:
+                if comment.state == 0:
+                    rv += comment.comment_count(iter=iter) + 1
         return rv
 
     @staticmethod
@@ -1657,7 +1657,8 @@ class Thought(Serializable, db.Model):
     @property
     def upvotes(self):
         """Returns a query for all upvotes, including disabled ones"""
-        return self.children.filter_by(kind="upvote")
+        # return self.children.filter_by(kind="upvote")
+        return Thought.query.filter_by(kind="upvote").filter_by(parent_id=self.id)
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
     def upvote_count(self):
@@ -1760,8 +1761,8 @@ class PerceptAssociation(db.Model):
     thought_id = db.Column(db.String(32), db.ForeignKey('thought.id'), primary_key=True)
 
     author_id = db.Column(db.String(32), db.ForeignKey('identity.id'))
-    author = db.relationship("Identity", backref="percept_assocs")
-    percept = db.relationship("Percept", backref="thought_assocs")
+    author = db.relationship("Identity", backref="percept_assocs", lazy="joined")
+    percept = db.relationship("Percept", backref="thought_assocs", lazy="joined")
 
     @classmethod
     def validate_changeset(cls, changeset):
@@ -2924,7 +2925,8 @@ class MovementMemberAssociation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     movement_id = db.Column(db.String(32), db.ForeignKey('movement.id'))
     persona_id = db.Column(db.String(32), db.ForeignKey('persona.id'))
-    persona = db.relationship("Persona", backref="movement_assocs")
+    persona = db.relationship("Persona",
+        backref="movement_assocs", lazy="joined")
 
     # Role may be either 'admin' or 'member'
     active = db.Column(db.Boolean, default=True)
