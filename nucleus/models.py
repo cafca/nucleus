@@ -1535,7 +1535,7 @@ class Thought(Serializable, db.Model):
         if not isinstance(incr, int):
             raise ValueError("Can only change comment count by integer values. Got {}: {}".format(type(incr), incr))
 
-        self.comment_count = self.comment_count + incr
+        self._comment_count = self.comment_count() + incr
         if self.parent is not None:
             self.parent.update_comment_count(incr)
 
