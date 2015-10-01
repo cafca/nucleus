@@ -1612,7 +1612,7 @@ class Thought(Serializable, db.Model):
         top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
 
         rv = list()
-        while len(rv) < min([15, len(top_post_selection)]):
+        while len(rv) < min([10, len(top_post_selection)]):
             candidate = top_post_selection.pop(0)
             # Don't return blogged thoughts for source "mindspace"
             if source != "mindspace" or not candidate._blogged:
