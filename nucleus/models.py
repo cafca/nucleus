@@ -1175,6 +1175,7 @@ class Thought(Serializable, db.Model):
     text = db.Column(db.Text)
     posted_from = db.Column(db.String(64))
 
+    _comment_count = db.Column(db.Integer)
     _upvotes = db.Column(db.Integer)
     _blogged = db.Column(db.Boolean, default=False)
 
@@ -1282,26 +1283,28 @@ class Thought(Serializable, db.Model):
 
         return new_thought
 
-    @property
-    def comments(self):
-        return [thought for thought in self.children if thought.kind == "thought"]
-
     def comment_count(self, iter=15):
         """
-        Return the number of comemnts this Thought has receieved
+        Return the number of comments this Thought has receieved
 
-        Iterates up to a depth of 15 replies
+        Iterates up to a depth of 15 replies of self._comment_count is None
 
         Returns:
             Int: Number of comments
         """
-        rv = 0
-        iter = iter - 1
-        if iter > 0:
-            for comment in self.comments:
-                if comment.state == 0:
-                    rv += comment.comment_count(iter=iter) + 1
-        return rv
+        if self._comment_count is None:
+            rv = 0
+            iter = iter - 1
+            if iter > 0:
+                for comment in self.comments:
+                    if comment.state == 0:
+                        rv += comment.comment_count(iter=iter) + 1
+            self._comment_count = rv
+        return self._comment_count
+
+    @property
+    def comments(self):
+        return [thought for thought in self.children if thought.kind == "thought"]
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1458,7 +1461,10 @@ class Thought(Serializable, db.Model):
                 instance.percept_assocs.append(assoc)
                 logger.debug("Attached {} to new {}".format(percept, instance))
 
-        if parent and parent.author != author:
+        if parent is not None:
+            parent.update_comment_count(1)
+
+        if parent is not None and parent.author != author:
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
@@ -1523,6 +1529,15 @@ class Thought(Serializable, db.Model):
         t = (datetime.datetime.utcnow() - self.created).total_seconds() / 3600 + 2
         rv = (s / pow(t, 1.5))
         return rv
+
+    def update_comment_count(self, incr):
+        """Increment comment count by one on this thought and recurse parents"""
+        if not isinstance(incr, int):
+            raise ValueError("Can only change comment count by integer values. Got {}: {}".format(type(incr), incr))
+
+        self.comment_count = self.comment_count + incr
+        if self.parent is not None:
+            self.parent.update_comment_count(incr)
 
     def link_url(self):
         """Return URL if this Thought has a Link-Percept
