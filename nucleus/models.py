@@ -624,9 +624,8 @@ class Persona(Identity):
             return (self.id == author_id)
         return False
 
-    @property
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
-    def attention(self):
+    def get_attention(self):
         """Return a numberic value indicating attention this Persona has received
 
         Returns:
@@ -639,6 +638,8 @@ class Persona(Identity):
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
+
+    attention = property(get_attention)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1246,14 +1247,15 @@ class Thought(Serializable, db.Model):
                     rv = True
         return rv
 
-    @property
-    def attachments(self):
+    def get_attachments(self):
         rv = defaultdict(list)
         for pa in self.percept_assocs:
             if pa.percept.kind in ATTACHMENT_KINDS:
                 rv[pa.percept.kind].append(pa)
 
         return rv
+
+    attachments = property(get_attachments)
 
     @classmethod
     def clone(cls, thought, author, mindset):
@@ -1305,9 +1307,10 @@ class Thought(Serializable, db.Model):
             self._comment_count = rv
         return self._comment_count
 
-    @property
-    def comments(self):
+    def get_comments(self):
         return [thought for thought in self.children if thought.kind == "thought"]
+
+    comments = property(get_comments)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1570,9 +1573,10 @@ class Thought(Serializable, db.Model):
             cache.delete_memoized(recent_thoughts)
             self.state = new_state
 
-    @property
-    def tags(self):
+    def get_tags(self):
         return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+
+    tags = property(get_tags)
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
@@ -1669,11 +1673,12 @@ class Thought(Serializable, db.Model):
         else:
             return True
 
-    @property
-    def upvotes(self):
+    def get_upvotes(self):
         """Returns a query for all upvotes, including disabled ones"""
         # return self.children.filter_by(kind="upvote")
         return Thought.query.filter_by(kind="upvote").filter_by(parent_id=self.id)
+
+    upvotes = property(get_upvotes)
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
     def upvote_count(self):
@@ -2115,8 +2120,7 @@ class LinkPercept(Percept):
 
         return new_percept
 
-    @property
-    def domain(self):
+    def get_domain(self):
         """Return the name of this Percept's domain
 
         Returns:
@@ -2135,6 +2139,8 @@ class LinkPercept(Percept):
             rv = None
         rv = rv[4:] if rv.startswith('www.') else rv
         return rv
+
+    domain = property(get_domain)
 
     @classmethod
     def get_or_create(cls, url, title=None):
@@ -3049,9 +3055,8 @@ class Movement(Identity):
         if persona not in self.members:
             self.members.append(persona)
 
-    @property
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
-    def attention(self):
+    def get_attention(self):
         """Return a numberic value indicating attention this Movement has received
 
         Returns:
@@ -3070,6 +3075,8 @@ class Movement(Identity):
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
+
+    attention = property(get_attention)
 
     def authorize(self, action, author_id=None):
         """Return True if this Movement authorizes `action` for `author_id`
