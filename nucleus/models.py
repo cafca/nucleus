@@ -24,7 +24,9 @@ from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     CHANGE_TYPES, ExecutionTimer
 from .helpers import process_attachments, recent_thoughts
 
-from database import cache, db
+from .jobs import refresh_recent_thoughts, refresh_conversation_lists
+
+from connections import cache, db
 
 UPVOTE_CACHE_DURATION = 60 * 10
 ATTENTION_CACHE_DURATION = 60 * 10
@@ -1468,12 +1470,8 @@ class Thought(Serializable, db.Model):
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
-        cache.delete_memoized(recent_thoughts)
-        if instance.mindset and isinstance(instance.mindset, Dialogue):
-            logger.info("Deleting conversation list cache for all parties in {}"
-                .format(instance.mindset))
-            cache.delete_memoized(instance.mindset.author.conversation_list)
-            cache.delete_memoized(instance.mindset.other.conversation_list)
+        refresh_recent_thoughts.delay()
+        refresh_conversation_lists.delay(instance.mindset.id)
 
         return {
             "instance": instance,
@@ -2917,7 +2915,7 @@ class Dialogue(Mindset):
         Returns:
             string: Name for this Mindset
         """
-        if not current_user.is_anonymous():
+        if current_user and not current_user.is_anonymous():
             if current_user.active_persona == self.author:
                 rv = "Dialogue with {}".format(self.other.username)
             elif current_user.active_persona == self.other:
