@@ -6,7 +6,7 @@ from goose import Goose
 from sqlalchemy import inspect
 
 from nucleus.nucleus import ExecutionTimer
-from nucleus.nucleus.database import cache
+from nucleus.nucleus.connections import cache
 
 
 # For calculating scores
