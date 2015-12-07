@@ -18,6 +18,18 @@ logger = logging.getLogger('nucleus')
 
 
 @job
+def refresh_attention_cache():
+    """Calculate current attention for all known identities"""
+    from .models import Identity
+
+    logger.info("Refreshing attention cache")
+
+    for ident in Identity.query.all():
+        cache.delete_memoized(ident.get_attention)
+        ident.get_attention()
+
+
+@job
 def refresh_conversation_lists(dialogue_id):
     """Refresh conversation list cache for all participants in a given dialogue"""
     from .models import Dialogue
