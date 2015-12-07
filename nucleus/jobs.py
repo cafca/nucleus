@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-    glia.jobs
+    nucleus.jobs
     ~~~~~
 
     Collection of functions for performing time consuming tasks
@@ -11,7 +11,7 @@ import logging
 
 from flask.ext.rq import job
 
-from .connections import cache
+from .connections import db, cache
 from .helpers import recent_thoughts
 
 logger = logging.getLogger('nucleus')
@@ -43,3 +43,23 @@ def refresh_recent_thoughts():
 
     cache.delete_memoized(recent_thoughts)
     return recent_thoughts()
+
+
+@job
+def refresh_upvote_count(thought):
+    """Recalculate upvote count"""
+    cache.delete_memoized(thought.upvote_count)
+    return thought.upvote_count()
+
+
+@job
+def check_promotion(thought):
+    """Check whether a thought has passed promotion threshold"""
+    movement = thought.mindset.author
+    passed = movement.promotion_check(thought)
+
+    if passed:
+        db.session.add(movement.blog)
+        db.session.commit()
+
+        cache.delete_memoized(movement.mindspace_top_thought)

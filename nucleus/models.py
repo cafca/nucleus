@@ -24,7 +24,8 @@ from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     CHANGE_TYPES, ExecutionTimer
 from .helpers import process_attachments, recent_thoughts
 
-from .jobs import refresh_recent_thoughts, refresh_conversation_lists
+from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
+    refresh_upvote_count, check_promotion
 
 from connections import cache, db
 
@@ -1471,7 +1472,8 @@ class Thought(Serializable, db.Model):
                 author=author, url=url_for('web.thought', id=thought_id)))
 
         refresh_recent_thoughts.delay()
-        refresh_conversation_lists.delay(instance.mindset.id)
+        if instance.mindset and isinstance(instance.mindset, Dialogue):
+            refresh_conversation_lists.delay(instance.mindset.id)
 
         return {
             "instance": instance,
@@ -1751,17 +1753,13 @@ class Thought(Serializable, db.Model):
         except SQLAlchemyError:
             logger.exception("Error toggling upvote")
         else:
-            cache.delete_memoized(self.upvote_count)
+            refresh_upvote_count.delay(self)
 
             if upvote.state == 0 and \
                 isinstance(self.mindset, Mindspace) and \
                     isinstance(self.mindset.author, Movement):
 
-                if self.mindset.author.promotion_check(self):
-                    db.session.add(self.mindset.author.blog)
-                    db.session.commit()
-
-                cache.delete_memoized(self.mindset.author.mindspace_top_thought)
+                check_promotion.delay(self)
             return upvote
 
 
