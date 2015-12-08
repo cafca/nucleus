@@ -18,9 +18,9 @@ logger = logging.getLogger('nucleus')
 
 # These function names will be called in the specified (seconds) interval
 periodical = [
-    ("refresh_attention_cache", 60),
-    ("refresh_mindspace_top_thought", 60),
-    ("refresh_frontpages", 60),
+    ("refresh_attention_cache", 60 * 15),
+    ("refresh_mindspace_top_thought", 60 * 15),
+    ("refresh_frontpages", 60 * 15),
 ]
 
 
