@@ -1720,13 +1720,13 @@ class Thought(Serializable, db.Model):
         except SQLAlchemyError:
             logger.exception("Error toggling upvote")
         else:
-            refresh_upvote_count.delay(self)
+            refresh_upvote_count.delay(self.id)
 
             if upvote.state == 0 and \
                 isinstance(self.mindset, Mindspace) and \
                     isinstance(self.mindset.author, Movement):
 
-                check_promotion.delay(self)
+                check_promotion.delay(self.id)
             return upvote
 
 

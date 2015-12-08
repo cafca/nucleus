@@ -106,22 +106,26 @@ def refresh_recent_thoughts():
 
 
 @job
-def refresh_upvote_count(thought):
+def refresh_upvote_count(thought_id):
     """Recalculate upvote count"""
     from glia import create_app
     app = create_app(log_info=False)
     with app.app_context():
+        from .models import Thought
+        thought = Thought.query.get(thought_id)
         cache.delete_memoized(thought.upvote_count)
         return thought.upvote_count()
 
 
 @job
-def check_promotion(thought):
+def check_promotion(thought_id):
     """Check whether a thought has passed promotion threshold"""
     from glia import create_app
     app = create_app(log_info=False)
     with app.app_context():
-        db.session.refresh(thought)
+        from .models import Thought
+        thought = Thought.query.get(thought_id)
+
         movement = thought.mindset.author
         passed = movement.promotion_check(thought)
 
