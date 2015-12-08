@@ -30,6 +30,7 @@ from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
 from connections import cache, db
 
 UPVOTE_CACHE_DURATION = 60 * 10
+
 ATTENTION_CACHE_DURATION = 60 * 10
 
 TOP_MOVEMENT_CACHE_DURATION = 60 * 60
@@ -38,7 +39,7 @@ REPOST_MINDSET_CACHE_DURATION = 60 * 60 * 24
 
 TOP_THOUGHT_CACHE_DURATION = 60 * 60
 RECENT_THOUGHT_CACHE_DURATION = 60 * 60 * 24
-MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 60 * 24
+MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
 
 SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
 PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
@@ -762,7 +763,7 @@ class Persona(Identity):
         """
         source_idents = set()
         for source in self.blogs_followed:
-            if isinstance(source, Movement) and source.active_member():
+            if isinstance(source, Movement) and source.active_member(persona=self):
                 source_idents.add(source.mindspace_id)
             source_idents.add(source.blog_id)
 
