@@ -16,6 +16,7 @@ from .helpers import recent_thoughts
 
 logger = logging.getLogger('nucleus')
 
+# These function names will be called in the specified (seconds) interval
 periodical = [
     ("refresh_attention_cache", 15),
     ("refresh_mindspace_top_thought", 15),
@@ -27,22 +28,11 @@ def job_id(domain, name):
     return "-".join([domain, name])
 
 
-def flask_wrap(func):
-
-    def func_wrapper():
-        from glia import create_app
-        app = create_app()
-        with app.app_context():
-            rv = func()
-        return rv
-    return func_wrapper
-
-
 @job
 def refresh_attention_cache():
     """Calculate current attention for all known identities"""
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         from .models import Identity
 
@@ -57,7 +47,7 @@ def refresh_attention_cache():
 def refresh_conversation_lists(dialogue_id):
     """Refresh conversation list cache for all participants in a given dialogue"""
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         from .models import Dialogue
 
@@ -76,7 +66,7 @@ def refresh_conversation_lists(dialogue_id):
 @job
 def refresh_frontpages():
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         from glia.web.helpers import generate_graph
         from .models import Persona, Thought
@@ -94,7 +84,7 @@ def refresh_frontpages():
 @job
 def refresh_mindspace_top_thought():
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         from .models import Movement
 
@@ -108,7 +98,7 @@ def refresh_mindspace_top_thought():
 def refresh_recent_thoughts():
     """Refresh cache of recent thoughts"""
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
 
         cache.delete_memoized(recent_thoughts)
@@ -119,7 +109,7 @@ def refresh_recent_thoughts():
 def refresh_upvote_count(thought):
     """Recalculate upvote count"""
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         cache.delete_memoized(thought.upvote_count)
         return thought.upvote_count()
@@ -129,7 +119,7 @@ def refresh_upvote_count(thought):
 def check_promotion(thought):
     """Check whether a thought has passed promotion threshold"""
     from glia import create_app
-    app = create_app()
+    app = create_app(log_info=False)
     with app.app_context():
         db.session.refresh(thought)
         movement = thought.mindset.author
