@@ -24,9 +24,13 @@ from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
     CHANGE_TYPES, ExecutionTimer
 from .helpers import process_attachments, recent_thoughts
 
-from database import cache, db
+from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
+    refresh_upvote_count, check_promotion, job_id
+
+from connections import cache, db
 
 UPVOTE_CACHE_DURATION = 60 * 10
+
 ATTENTION_CACHE_DURATION = 60 * 10
 
 TOP_MOVEMENT_CACHE_DURATION = 60 * 60
@@ -621,9 +625,8 @@ class Persona(Identity):
             return (self.id == author_id)
         return False
 
-    @property
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
-    def attention(self):
+    def get_attention(self):
         """Return a numberic value indicating attention this Persona has received
 
         Returns:
@@ -636,6 +639,8 @@ class Persona(Identity):
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
+
+    attention = property(get_attention)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -758,7 +763,7 @@ class Persona(Identity):
         """
         source_idents = set()
         for source in self.blogs_followed:
-            if isinstance(source, Movement) and source.active_member():
+            if isinstance(source, Movement) and source.active_member(persona=self):
                 source_idents.add(source.mindspace_id)
             source_idents.add(source.blog_id)
 
@@ -1243,14 +1248,15 @@ class Thought(Serializable, db.Model):
                     rv = True
         return rv
 
-    @property
-    def attachments(self):
+    def get_attachments(self):
         rv = defaultdict(list)
         for pa in self.percept_assocs:
             if pa.percept.kind in ATTACHMENT_KINDS:
                 rv[pa.percept.kind].append(pa)
 
         return rv
+
+    attachments = property(get_attachments)
 
     @classmethod
     def clone(cls, thought, author, mindset):
@@ -1302,9 +1308,10 @@ class Thought(Serializable, db.Model):
             self._comment_count = rv
         return self._comment_count
 
-    @property
-    def comments(self):
+    def get_comments(self):
         return [thought for thought in self.children if thought.kind == "thought"]
+
+    comments = property(get_comments)
 
     @staticmethod
     def create_from_changeset(changeset, stub=None, update_sender=None, update_recipient=None):
@@ -1468,12 +1475,9 @@ class Thought(Serializable, db.Model):
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
-        cache.delete_memoized(recent_thoughts)
+        refresh_recent_thoughts.delay()
         if instance.mindset and isinstance(instance.mindset, Dialogue):
-            logger.info("Deleting conversation list cache for all parties in {}"
-                .format(instance.mindset))
-            cache.delete_memoized(instance.mindset.author.conversation_list)
-            cache.delete_memoized(instance.mindset.other.conversation_list)
+            refresh_conversation_lists.delay(instance.mindset.id)
 
         return {
             "instance": instance,
@@ -1570,21 +1574,21 @@ class Thought(Serializable, db.Model):
             cache.delete_memoized(recent_thoughts)
             self.state = new_state
 
-    @property
-    def tags(self):
+    def get_tags(self):
         return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+
+    tags = property(get_tags)
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
-    def top_thought(cls, source=None, min_votes=0, filter_blogged=False):
+    def top_thought(cls, persona=None, filter_blogged=False):
         """Return up to 10 hottest thoughts as measured by Thought.hot
 
         Args:
-            source (String): "blog" or "mindspace" to count only thoughts from
-                those sources
-            source (set): Set of Mindset IDs to get content from
-            filter_blogged (Boolean): Don't include Thought if Thought.blogged
-                is True
+            persona (Persona): Restricts the result to be from the persona's
+                subscriptions
+            filter_blogged (Boolean): Don't include thoughts in mindspaces
+                that also exist in the corresponding blog
 
         Returns:
             list: List of thought ids
@@ -1595,34 +1599,22 @@ class Thought(Serializable, db.Model):
         if filter_blogged:
             top_post_selection = top_post_selection.filter_by(_blogged=False)
 
-        if source == "blog":
+        if not isinstance(persona, Persona):
             top_post_selection = top_post_selection \
                 .join(Mindset) \
                 .filter(Mindset.kind == "blog")
 
-        elif source == "mindspace":
-            top_post_selection = top_post_selection \
-                .join(Mindset) \
-                .filter(Mindset.kind == "mindspace")
-
-        elif isinstance(source, set):
+        else:
+            sources = persona.frontpage_sources()
             top_post_selection = top_post_selection.filter(
-                Thought.mindset_id.in_(list(source)))
+                Thought.mindset_id.in_(list(sources)))
 
-        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
+        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)[:10]
 
-        rv = list()
-        while len(rv) < min([10, len(top_post_selection)]):
-            candidate = top_post_selection.pop(0)
-            # Don't return blogged thoughts for source "mindspace"
-            if source != "mindspace" or not candidate._blogged:
-                if min_votes > 0:
-                    if candidate.upvote_count() >= min_votes:
-                        rv.append(candidate.id)
-                else:
-                    rv.append(candidate.id)
-        timer.stop("Generated top thought from {}s".format(
-            source if isinstance(source, str) else "movement list"))
+        rv = [t.id for t in top_post_selection]
+
+        timer.stop("Generated frontpage for {}".format(
+            persona if persona else "anonymous users"))
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
@@ -1669,11 +1661,12 @@ class Thought(Serializable, db.Model):
         else:
             return True
 
-    @property
-    def upvotes(self):
+    def get_upvotes(self):
         """Returns a query for all upvotes, including disabled ones"""
         # return self.children.filter_by(kind="upvote")
         return Thought.query.filter_by(kind="upvote").filter_by(parent_id=self.id)
+
+    upvotes = property(get_upvotes)
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
     def upvote_count(self):
@@ -1753,17 +1746,13 @@ class Thought(Serializable, db.Model):
         except SQLAlchemyError:
             logger.exception("Error toggling upvote")
         else:
-            cache.delete_memoized(self.upvote_count)
+            refresh_upvote_count.delay(self)
 
             if upvote.state == 0 and \
                 isinstance(self.mindset, Mindspace) and \
                     isinstance(self.mindset.author, Movement):
 
-                if self.mindset.author.promotion_check(self):
-                    db.session.add(self.mindset.author.blog)
-                    db.session.commit()
-
-                cache.delete_memoized(self.mindset.author.mindspace_top_thought)
+                check_promotion.delay(self)
             return upvote
 
 
@@ -2119,8 +2108,7 @@ class LinkPercept(Percept):
 
         return new_percept
 
-    @property
-    def domain(self):
+    def get_domain(self):
         """Return the name of this Percept's domain
 
         Returns:
@@ -2139,6 +2127,8 @@ class LinkPercept(Percept):
             rv = None
         rv = rv[4:] if rv.startswith('www.') else rv
         return rv
+
+    domain = property(get_domain)
 
     @classmethod
     def get_or_create(cls, url, title=None):
@@ -2917,7 +2907,7 @@ class Dialogue(Mindset):
         Returns:
             string: Name for this Mindset
         """
-        if not current_user.is_anonymous():
+        if current_user and not current_user.is_anonymous():
             if current_user.active_persona == self.author:
                 rv = "Dialogue with {}".format(self.other.username)
             elif current_user.active_persona == self.other:
@@ -3053,9 +3043,8 @@ class Movement(Identity):
         if persona not in self.members:
             self.members.append(persona)
 
-    @property
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
-    def attention(self):
+    def get_attention(self):
         """Return a numberic value indicating attention this Movement has received
 
         Returns:
@@ -3074,6 +3063,8 @@ class Movement(Identity):
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
+
+    attention = property(get_attention)
 
     def authorize(self, action, author_id=None):
         """Return True if this Movement authorizes `action` for `author_id`

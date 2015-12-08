@@ -11,7 +11,7 @@ from sqlalchemy.orm import backref
 from . import PersonaNotFoundError, InvalidSignatureError, UnauthorizedError, \
     VesicleStateError, logger
 from .models import Persona
-from database import db
+from connections import db
 
 VESICLE_VERSION = "0.1"
 DEFAULT_ENCODING = "{version}-{encoding}".format(version=VESICLE_VERSION, encoding="plain")
@@ -51,7 +51,7 @@ class Vesicle(db.Model):
     data = None
 
     author_id = db.Column(db.String(32), db.ForeignKey('persona.id', use_alter=True, name="fk_author_id"))
-    author = db.relationship('Persona', primaryjoin="Persona.id==Vesicle.author_id", post_update=True)
+    author = db.relationship('Persona', primaryjoin="persona.c.id==vesicle.c.author_id", post_update=True)
 
     recipients = db.relationship('Persona',
         secondary='keycrypts',
