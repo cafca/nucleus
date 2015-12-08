@@ -27,6 +27,18 @@ def job_id(domain, name):
     return "-".join([domain, name])
 
 
+def flask_wrap(func):
+
+    def func_wrapper():
+        from glia import create_app
+        app = create_app()
+        with app.app_context():
+            rv = func()
+        return rv
+    return func_wrapper
+
+
+@flask_wrap
 @job
 def refresh_attention_cache():
     """Calculate current attention for all known identities"""
@@ -39,6 +51,7 @@ def refresh_attention_cache():
         ident.get_attention()
 
 
+@flask_wrap
 @job
 def refresh_conversation_lists(dialogue_id):
     """Refresh conversation list cache for all participants in a given dialogue"""
@@ -56,6 +69,7 @@ def refresh_conversation_lists(dialogue_id):
         dialogue.other.conversation_list()
 
 
+@flask_wrap
 @job
 def refresh_frontpages():
     from glia.web.helpers import generate_graph
@@ -71,6 +85,7 @@ def refresh_frontpages():
         generate_graph(persona=p)
 
 
+@flask_wrap
 @job
 def refresh_mindspace_top_thought():
     from .models import Movement
@@ -81,6 +96,7 @@ def refresh_mindspace_top_thought():
         movement.mindspace_top_thought()
 
 
+@flask_wrap
 @job
 def refresh_recent_thoughts():
     """Refresh cache of recent thoughts"""
@@ -89,6 +105,7 @@ def refresh_recent_thoughts():
     return recent_thoughts()
 
 
+@flask_wrap
 @job
 def refresh_upvote_count(thought):
     """Recalculate upvote count"""
@@ -96,6 +113,7 @@ def refresh_upvote_count(thought):
     return thought.upvote_count()
 
 
+@flask_wrap
 @job
 def check_promotion(thought):
     """Check whether a thought has passed promotion threshold"""
