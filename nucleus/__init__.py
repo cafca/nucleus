@@ -93,9 +93,3 @@ class UnauthorizedError(Exception):
 class VesicleStateError(Exception):
     """Throw this error when a Vesicle's state does not allow for an action"""
     pass
-
-
-# Import at bottom to avoid circular imports
-# Import all models to allow querying db binds
-# from .models import *
-# from vesicle import Vesicle

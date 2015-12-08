@@ -25,7 +25,7 @@ from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
 from .helpers import process_attachments, recent_thoughts
 
 from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
-    refresh_upvote_count, check_promotion, job_id
+    refresh_upvote_count, check_promotion
 
 from connections import cache, db
 
@@ -306,13 +306,6 @@ class User(UserMixin, db.Model):
         return True
 
 
-t_identity_vesicles = db.Table(
-    'identity_vesicles',
-    db.Column('identity_id', db.String(32), db.ForeignKey('identity.id')),
-    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
-)
-
-
 class Identity(Serializable, db.Model):
     """Abstract identity, superclass of Persona and Movement
 
@@ -325,7 +318,6 @@ class Identity(Serializable, db.Model):
         sign_private: Private signing RSA key, JSON encoded KeyCzar export
         sign_public: Public signing RSA key, JSON encoded KeyCzar export
         modified: Last time this Identity object was modified, defaults to now
-        vesicles: List of Vesicles that describe this Identity object
         blog: Mindset containing this Identity's blog
 
     """
@@ -365,12 +357,6 @@ class Identity(Serializable, db.Model):
         secondary='blogs_followed',
         primaryjoin='blogs_followed.c.follower_id==identity.c.id',
         secondaryjoin='blogs_followed.c.followee_id==identity.c.id')
-
-    vesicles = db.relationship(
-        'Vesicle',
-        secondary='identity_vesicles',
-        primaryjoin='identity_vesicles.c.identity_id==identity.c.id',
-        secondaryjoin='identity_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __repr__(self):
         try:
@@ -1150,13 +1136,6 @@ class FollowerNotification(Notification):
         self.source = author.username
 
 
-t_thought_vesicles = db.Table(
-    'thought_vesicles',
-    db.Column('thought_id', db.String(32), db.ForeignKey('thought.id')),
-    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
-)
-
-
 class Thought(Serializable, db.Model):
     """A Thought represents a post"""
 
@@ -1204,11 +1183,6 @@ class Thought(Serializable, db.Model):
     percept_assocs = db.relationship("PerceptAssociation",
         backref="thought",
         lazy="joined")
-
-    vesicles = db.relationship('Vesicle',
-        secondary='thought_vesicles',
-        primaryjoin='thought_vesicles.c.thought_id==thought.c.id',
-        secondaryjoin='thought_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __repr__(self):
         return "<Thought {}>".format(self.id[:8])
@@ -1784,13 +1758,6 @@ class PerceptAssociation(db.Model):
         return p_cls.validate_changeset(changeset)
 
 
-t_percept_vesicles = db.Table(
-    'percept_vesicles',
-    db.Column('percept_id', db.String(32), db.ForeignKey('percept.id')),
-    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
-)
-
-
 class Percept(Serializable, db.Model):
     """A Percept represents an attachment"""
 
@@ -1812,13 +1779,6 @@ class Percept(Serializable, db.Model):
     source = db.Column(db.String(128))
     state = db.Column(db.Integer, default=0)
     title = db.Column(db.Text)
-
-    # Relations
-    vesicles = db.relationship(
-        'Vesicle',
-        secondary='percept_vesicles',
-        primaryjoin='percept_vesicles.c.percept_id==percept.c.id',
-        secondaryjoin='percept_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __repr__(self):
         return "<Percept:{} [{}]>".format(self.kind, self.id[:6])
@@ -2477,13 +2437,6 @@ class Souma(Serializable, db.Model):
         return key_public.Verify(data, signature)
 
 
-t_mindset_vesicles = db.Table(
-    'mindset_vesicles',
-    db.Column('mindset_id', db.String(32), db.ForeignKey('mindset.id')),
-    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
-)
-
-
 class Mindset(Serializable, db.Model):
     """
     Mindsets are collections of objects with associated layout information.
@@ -2494,7 +2447,6 @@ class Mindset(Serializable, db.Model):
         author: Persona that created this Mindset
         kind: For what kind of context is this Mindset used
         index: Query for Thoughts that are contained in this Mindset
-        vesicles: List of Vesicles that describe this Mindset
     """
     __tablename__ = 'mindset'
     __mapper_args__ = {
@@ -2517,12 +2469,6 @@ class Mindset(Serializable, db.Model):
         backref=db.backref('mindsets'),
         primaryjoin="Identity.id==Mindset.author_id",
         post_update=True)
-
-    vesicles = db.relationship(
-        'Vesicle',
-        secondary='mindset_vesicles',
-        primaryjoin='mindset_vesicles.c.mindset_id==mindset.c.id',
-        secondaryjoin='mindset_vesicles.c.vesicle_id==vesicle.c.id')
 
     def __contains__(self, key):
         """Return True if the given key is contained in this Mindset.
@@ -2948,12 +2894,6 @@ t_members = db.Table(
     'members',
     db.Column('movement_id', db.String(32), db.ForeignKey('movement.id')),
     db.Column('persona_id', db.String(32), db.ForeignKey('persona.id'))
-)
-
-t_movement_vesicles = db.Table(
-    'movement_vesicles',
-    db.Column('movement_id', db.String(32), db.ForeignKey('movement.id')),
-    db.Column('vesicle_id', db.String(32), db.ForeignKey('vesicle.id'))
 )
 
 
