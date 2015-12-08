@@ -62,14 +62,13 @@ def refresh_frontpages():
     from .models import Persona, Thought
     logger.info("Refreshing frontpages")
 
-    Thought.top_thought(source="blog")
+    Thought.top_thought()
 
     for p in Persona.query.all():
-        logger.debug("Refreshing frontpage of {}".format(p.username.encode("utf-8")))
         frontpage = Thought.query.filter(Thought.id.in_(
-            Thought.top_thought(source=p.frontpage_sources(), filter_blogged=True)))
+            Thought.top_thought(persona=p, filter_blogged=True)))
         logging.info(frontpage)
-        generate_graph(frontpage, persona=p)
+        generate_graph(persona=p)
 
 
 @job

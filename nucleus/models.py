@@ -25,7 +25,7 @@ from . import UPVOTE_STATES, THOUGHT_STATES, PERCEPT_STATES, ATTACHMENT_KINDS, \
 from .helpers import process_attachments, recent_thoughts
 
 from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
-    refresh_upvote_count, check_promotion
+    refresh_upvote_count, check_promotion, job_id
 
 from connections import cache, db
 
@@ -1581,15 +1581,14 @@ class Thought(Serializable, db.Model):
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
-    def top_thought(cls, source=None, min_votes=0, filter_blogged=False):
+    def top_thought(cls, persona=None, filter_blogged=False):
         """Return up to 10 hottest thoughts as measured by Thought.hot
 
         Args:
-            source (String): "blog" or "mindspace" to count only thoughts from
-                those sources
-            source (set): Set of Mindset IDs to get content from
-            filter_blogged (Boolean): Don't include Thought if Thought.blogged
-                is True
+            persona (Persona): Restricts the result to be from the persona's
+                subscriptions
+            filter_blogged (Boolean): Don't include thoughts in mindspaces
+                that also exist in the corresponding blog
 
         Returns:
             list: List of thought ids
@@ -1600,34 +1599,22 @@ class Thought(Serializable, db.Model):
         if filter_blogged:
             top_post_selection = top_post_selection.filter_by(_blogged=False)
 
-        if source == "blog":
+        if not isinstance(persona, Persona):
             top_post_selection = top_post_selection \
                 .join(Mindset) \
                 .filter(Mindset.kind == "blog")
 
-        elif source == "mindspace":
-            top_post_selection = top_post_selection \
-                .join(Mindset) \
-                .filter(Mindset.kind == "mindspace")
-
-        elif isinstance(source, set):
+        else:
+            sources = persona.frontpage_sources()
             top_post_selection = top_post_selection.filter(
-                Thought.mindset_id.in_(list(source)))
+                Thought.mindset_id.in_(list(sources)))
 
-        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)
+        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)[:10]
 
-        rv = list()
-        while len(rv) < min([10, len(top_post_selection)]):
-            candidate = top_post_selection.pop(0)
-            # Don't return blogged thoughts for source "mindspace"
-            if source != "mindspace" or not candidate._blogged:
-                if min_votes > 0:
-                    if candidate.upvote_count() >= min_votes:
-                        rv.append(candidate.id)
-                else:
-                    rv.append(candidate.id)
-        timer.stop("Generated top thought from {}s".format(
-            source if isinstance(source, str) else "movement list"))
+        rv = [t.id for t in top_post_selection]
+
+        timer.stop("Generated frontpage for {}".format(
+            persona if persona else "anonymous users"))
         return rv
 
     def update_from_changeset(self, changeset, update_sender=None, update_recipient=None):
