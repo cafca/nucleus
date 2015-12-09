@@ -2,54 +2,32 @@ import logging
 import blinker
 import time
 
-ERROR = {
-    "MISSING_MESSAGE_TYPE": (1, "No message type found."),
-    "MISSING_PAYLOAD": (2, "No data payload found."),
-    "OBJECT_NOT_FOUND": lambda name: (3, "Object does not exist: ".format(name)),
-    "MISSING_KEY": lambda name: (4, "Missing data for this request: {}".format(name)),
-    "INVALID_SIGNATURE": (5, "Invalid signature."),
-    "INVALID_SESSION": (6, "Session invalid. Please re-authenticate."),
-    "DUPLICATE_ID": lambda id: (7, "Duplicate ID: {}".format(id)),
-    "SOUMA_NOT_FOUND": lambda id: (8, "Souma not found: {}".format(id)),
-    "MISSING_PARAMETER": lambda name: (9, "Missing HTTP parameter: {}".format(name)),
-    "PROTOCOL_UNSUPPORTED": (10, "The request uses an unsupported protocol version"),
-    "INVALID_VALUE": lambda name: (11, "The request contained an invalid value ({})".format(name))
-}
+UPVOTE_CACHE_DURATION = 60 * 10
 
-# Setup Blinker namespace
-notification_signals = blinker.Namespace()
+ATTENTION_CACHE_DURATION = 60 * 10
+
+TOP_MOVEMENT_CACHE_DURATION = 60 * 60
+MEMBER_COUNT_CACHE_DURATION = 60 * 60
+REPOST_MINDSET_CACHE_DURATION = 60 * 60 * 24
+
+TOP_THOUGHT_CACHE_DURATION = 60 * 60
+RECENT_THOUGHT_CACHE_DURATION = 60 * 60 * 24
+MINDSPACE_TOP_THOUGHT_CACHE_DURATION = 60 * 10
+
+SUGGESTED_MOVEMENTS_CACHE_DURATION = 60 * 10
+PERSONA_MOVEMENTS_CACHE_DURATION = 60 * 10
+CONVERSATION_LIST_CACHE_DURATION = 60 * 60 * 24
+
+IFRAME_URL_CACHE_DURATION = 24 * 60 * 60
+
+ATTENTION_MULT = 10
 
 # Setup logger namespace
 logger = logging.getLogger('nucleus')
 
-# Source formatting helper
-source_format = lambda address: None if address is None else \
-    "{host}:{port}".format(host=address[0], port=address[1])
-
-# Possible states of thoughts
-THOUGHT_STATES = {
-    -2: (-2, "deleted"),
-    -1: (-1, "unavailable"),
-    0: (0, "published"),
-    1: (1, "draft"),
-    2: (2, "private"),
-    3: (3, "updating")
-}
-
-# Possible states of percepts
-PERCEPT_STATES = {
-    -1: (-1, "unavailable"),
-    0: (0, "published"),
-    1: (1, "private"),
-    2: (2, "updating")
-}
-
-# Possible states of Upvotes
-UPVOTE_STATES = {
-    -1: "disabled",
-    0: "active",
-    1: "unknown author"
-}
+# Setup Blinker namespace
+notification_signals = blinker.Namespace()
+movement_chat = notification_signals.signal('movement-chat')
 
 ALLOWED_COLORS = {
     '0b3954': "Base blue",
@@ -61,7 +39,7 @@ ALLOWED_COLORS = {
     'ef3054': "Bright pink"
 }
 
-CHANGE_TYPES = ("insert", "read", "update", "delete")
+ACCESS_MODES = ("insert", "read", "update", "delete")
 
 ATTACHMENT_KINDS = ("link", "linkedpicture", "text")
 
@@ -75,11 +53,6 @@ class ExecutionTimer(object):
         logger.debug("{} in {} ms".format(msg, end))
 
 
-class InvalidSignatureError(Exception):
-    """Throw this error when a signature fails authenticity checks"""
-    pass
-
-
 class PersonaNotFoundError(Exception):
     """Throw this error when the Persona profile specified for an action is not available"""
     pass
@@ -87,9 +60,4 @@ class PersonaNotFoundError(Exception):
 
 class UnauthorizedError(Exception):
     """Throw this error when the active Persona is not authorized for an action"""
-    pass
-
-
-class VesicleStateError(Exception):
-    """Throw this error when a Vesicle's state does not allow for an action"""
     pass

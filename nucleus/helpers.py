@@ -71,13 +71,13 @@ def find_mentions(text):
     Returns:
         iterable: pairs of (mention_text, Identity_object)
     """
-    from .models import Identity
+    import identity
     expr = "@([\S]{3,80})"
     rv = []
 
     res = re.findall(expr, text)
     for mention_text in res:
-        ident = Identity.query.filter_by(username=mention_text).first()
+        ident = identity.Identity.query.filter_by(username=mention_text).first()
         if ident is not None:
             rv.append((mention_text, ident))
         else:
@@ -128,32 +128,31 @@ def process_attachments(text):
             0: Message with some attachment hints removed (URLs)
             1: List of Percept instances extracted from text
     """
-    from .models import LinkPercept, LinkedPicturePercept, TextPercept, \
-        TagPercept, Mention
+    import content
 
     g = Goose()
     percepts = set()
 
     tags, text = find_tags(text)
     for tag in tags:
-        tagpercept = TagPercept(title=tag)
+        tagpercept = content.TagPercept(title=tag)
         percepts.add(tagpercept)
 
     mentions = find_mentions(text)
     for mention_text, ident in mentions:
-        mention = Mention(identity=ident, text=mention_text)
+        mention = content.Mention(identity=ident, text=mention_text)
         percepts.add(mention)
 
     links, text = find_links(text)
     for link in links:
         if "content-type" in link.headers and link.headers["content-type"][:5] == "image":
-            linkpercept = LinkedPicturePercept.get_or_create(link.url)
+            linkpercept = content.LinkedPicturePercept.get_or_create(link.url)
 
             # Use picture filename as user message if empty
             if len(text) == 0:
                 text = link.url[(link.url.rfind('/') + 1):]
         else:
-            linkpercept = LinkPercept.get_or_create(link.url)
+            linkpercept = content.LinkPercept.get_or_create(link.url)
             page = g.extract(url=link.url)
 
             # Add metadata if percept object is newly created
@@ -178,18 +177,28 @@ def process_attachments(text):
 
 
 @cache.memoize(timeout=60 * 60 * 24)
-def recent_thoughts():
+def recent_thoughts(session=None):
     """Return 10 most recent Thoughts
 
     Cache is reset when calling Thought.create_from_input
     or Thought.set_state
 
+    Args:
+        session: SA session to use
+
     Returns:
         list: List of IDs
     """
-    from nucleus.nucleus.models import Thought, Movement, Mindset
+    from nucleus.nucleus.content import Thought
+    from nucleus.nucleus.context import Mindset
+    from nucleus.nucleus.identity import Movement
     timer = ExecutionTimer()
-    res = Thought.query \
+
+    if session is None:
+        from .connections import db
+        session = db.session
+
+    res = session.query(Thought) \
         .filter_by(state=0) \
         .filter_by(kind="thought") \
         .order_by(Thought.created.desc()) \
