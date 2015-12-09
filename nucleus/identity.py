@@ -216,7 +216,7 @@ class Identity(Model):
         """Return True if this Identity authorizes `action` for `author_id`
 
         Args:
-            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
+            action (String): Action to be performed (see Synapse.ACCESS_MODES)
             author_id (String): Identity ID that wants to perform the action
 
         Returns:
@@ -279,7 +279,7 @@ class Persona(Identity):
         """Return True if this Persona authorizes `action` for `author_id`
 
         Args:
-            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
+            action (String): Action to be performed (see Synapse.ACCESS_MODES)
             author_id (String): Persona ID that wants to perform the action
 
         Returns:
@@ -645,7 +645,7 @@ class Movement(Identity):
         """Return True if this Movement authorizes `action` for `author_id`
 
         Args:
-            action (String): Action to be performed (see Synapse.CHANGE_TYPES)
+            action (String): Action to be performed (see Synapse.ACCESS_MODES)
             author_id (String): Persona ID that wants to perform the action
 
         Returns:

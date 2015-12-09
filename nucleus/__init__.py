@@ -25,10 +25,6 @@ ATTENTION_MULT = 10
 # Setup logger namespace
 logger = logging.getLogger('nucleus')
 
-# Source formatting helper
-source_format = lambda address: None if address is None else \
-    "{host}:{port}".format(host=address[0], port=address[1])
-
 # Setup Blinker namespace
 notification_signals = blinker.Namespace()
 movement_chat = notification_signals.signal('movement-chat')
@@ -43,7 +39,7 @@ ALLOWED_COLORS = {
     'ef3054': "Bright pink"
 }
 
-CHANGE_TYPES = ("insert", "read", "update", "delete")
+ACCESS_MODES = ("insert", "read", "update", "delete")
 
 ATTACHMENT_KINDS = ("link", "linkedpicture", "text")
 
@@ -57,11 +53,6 @@ class ExecutionTimer(object):
         logger.debug("{} in {} ms".format(msg, end))
 
 
-class InvalidSignatureError(Exception):
-    """Throw this error when a signature fails authenticity checks"""
-    pass
-
-
 class PersonaNotFoundError(Exception):
     """Throw this error when the Persona profile specified for an action is not available"""
     pass
@@ -69,9 +60,4 @@ class PersonaNotFoundError(Exception):
 
 class UnauthorizedError(Exception):
     """Throw this error when the active Persona is not authorized for an action"""
-    pass
-
-
-class VesicleStateError(Exception):
-    """Throw this error when a Vesicle's state does not allow for an action"""
     pass
