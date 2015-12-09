@@ -17,11 +17,11 @@ from sqlalchemy import Column, Integer, String, DateTime, \
 from sqlalchemy.orm import relationship, backref
 
 from . import logger
-from .base import Base, BaseModel
+from .base import Model, BaseModel
 from .identity import Movement, Persona
 
 
-class Mindset(Base):
+class Mindset(Model):
     """
     Mindsets are collections of objects with associated layout information.
 

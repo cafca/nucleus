@@ -25,13 +25,13 @@ from . import logger, ATTENTION_CACHE_DURATION, ATTENTION_MULT, \
     MINDSPACE_TOP_THOUGHT_CACHE_DURATION, TOP_MOVEMENT_CACHE_DURATION, \
     movement_chat
 
-from .base import Base, BaseModel
+from .base import Model, BaseModel
 from .connections import cache
 from .content import Notification, Thought, Blog, Upvote
 from .context import Dialogue, Mindset, Mindspace
 
 
-class User(UserMixin, Base):
+class User(UserMixin, Model):
     """A user of the website"""
 
     __tablename__ = 'user'
@@ -159,7 +159,7 @@ class User(UserMixin, Base):
         return True
 
 
-class Identity(Base):
+class Identity(Model):
     """Abstract identity, superclass of Persona and Movement
 
     Attributes:
@@ -234,7 +234,7 @@ class Identity(Base):
 #
 
 t_blogs_followed = Table('blogs_followed',
-    Base.metadata,
+    Model.metadata,
     Column('follower_id', String(32), ForeignKey('identity.id')),
     Column('followee_id', String(32), ForeignKey('identity.id'))
 )
@@ -498,7 +498,7 @@ class Persona(Identity):
         return mma
 
 
-class MovementMemberAssociation(Base):
+class MovementMemberAssociation(Model):
     """Associates Personas with Movements"""
 
     __tablename__ = 'movementmember_association'
@@ -525,7 +525,7 @@ class MovementMemberAssociation(Base):
 
 
 t_members = Table('members',
-    Base.metadata,
+    Model.metadata,
     Column('movement_id', String(32), ForeignKey('movement.id')),
     Column('persona_id', String(32), ForeignKey('persona.id'))
 )
