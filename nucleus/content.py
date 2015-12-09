@@ -339,6 +339,9 @@ class Thought(Model):
         """
         timer = ExecutionTimer()
 
+        if session is None:
+            session = db.session
+
         top_post_selection = session.query(cls).filter(cls.state >= 0)
 
         if filter_blogged:
