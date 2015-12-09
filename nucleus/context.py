@@ -11,6 +11,8 @@
 from flask import url_for
 from flask.ext.login import current_user
 
+import identity
+
 from uuid import uuid4
 from sqlalchemy import Column, Integer, String, DateTime, \
     ForeignKey
@@ -18,7 +20,6 @@ from sqlalchemy.orm import relationship, backref
 
 from . import logger
 from .base import Model, BaseModel
-from .identity import Movement, Persona
 
 
 class Mindset(Model):
@@ -61,7 +62,7 @@ class Mindset(Model):
         return (key in self.index)
 
     def __len__(self):
-        return self.index.paginate(1).total
+        return self.index.count()
 
     def __repr__(self):
         return "<{} [{}]>".format(self.name, self.id[:6])
@@ -77,9 +78,9 @@ class Mindset(Model):
             Boolean: True if authorized
         """
         if BaseModel.authorize(self, action, author_id=author_id):
-            if self.kind == "blog" and isinstance(self.author, Persona):
+            if self.kind == "blog" and isinstance(self.author, identity.Persona):
                 return self.author.id == author_id
-            elif self.kind == "blog" and isinstance(self.author, Movement):
+            elif self.kind == "blog" and isinstance(self.author, identity.Movement):
                 # Everyone can update
                 if action == "update":
                     return True
@@ -88,7 +89,7 @@ class Mindset(Model):
                     return True
 
             elif self.kind == "index":
-                p = Persona.query.filter(Persona.index_id == self.id)
+                p = identity.Persona.query.filter(identity.Persona.index_id == self.id)
                 return p.id == author_id
         return False
 
@@ -115,9 +116,9 @@ class Mindspace(Mindset):
     }
 
     def authorize(self, action, author_id=None):
-        if isinstance(self.author, Persona):
+        if isinstance(self.author, identity.Persona):
             rv = (author_id == self.author.id)
-        elif isinstance(self.author, Movement):
+        elif isinstance(self.author, identity.Movement):
             rv = self.author.authorize(action, author_id)
         return rv
 
@@ -125,11 +126,11 @@ class Mindspace(Mindset):
         """Return URL for this Mindset depending on kind"""
         rv = None
 
-        if isinstance(self.author, Movement):
-            m = Movement.query.filter(Movement.mindspace_id == self.id).first()
+        if isinstance(self.author, identity.Movement):
+            m = identity.Movement.query.filter(identity.Movement.mindspace_id == self.id).first()
             rv = url_for("web.movement_mindspace", id=m.id)
 
-        elif isinstance(self.author, Persona):
+        elif isinstance(self.author, identity.Persona):
             if self.author == current_user.active_persona:
                 rv = url_for("web.persona", id=self.author_id)
 
@@ -159,7 +160,7 @@ class Blog(Mindset):
         if action == "read":
             rv = True
         else:
-            if isinstance(self.author, Movement):
+            if isinstance(self.author, identity.Movement):
                 rv = (author_id == self.author.id) \
                     or (author_id == self.author.admin.id)
             else:
@@ -170,12 +171,12 @@ class Blog(Mindset):
         """Return URL for this Mindset depending on kind"""
         rv = None
 
-        if isinstance(self.author, Movement):
-            m = Movement.query.filter(Movement.blog_id == self.id).first()
+        if isinstance(self.author, identity.Movement):
+            m = identity.Movement.query.filter(identity.Movement.blog_id == self.id).first()
             rv = url_for("web.movement_blog", id=m.id)
 
-        elif isinstance(self.author, Persona):
-            p = Persona.query.filter(Persona.blog_id == self.id).first()
+        elif isinstance(self.author, identity.Persona):
+            p = identity.Persona.query.filter(identity.Persona.blog_id == self.id).first()
             rv = url_for("web.persona_blog", id=p.id)
 
         else:

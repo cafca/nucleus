@@ -187,7 +187,9 @@ def recent_thoughts():
     Returns:
         list: List of IDs
     """
-    from nucleus.nucleus.models import Thought, Movement, Mindset
+    from nucleus.nucleus.content import Thought
+    from nucleus.nucleus.context import Mindset
+    from nucleus.nucleus.identity import Movement
     timer = ExecutionTimer()
     res = Thought.query \
         .filter_by(state=0) \

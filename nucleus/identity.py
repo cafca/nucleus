@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-    nucleus.models.identity
+    nucleus.identity
     ~~~~~
 
     Identity and account models
@@ -9,6 +9,8 @@
 """
 import datetime
 
+import content
+import context
 
 from flask import url_for
 from flask.ext.login import current_user, UserMixin
@@ -27,11 +29,11 @@ from . import logger, ATTENTION_CACHE_DURATION, ATTENTION_MULT, \
 
 from .base import Model, BaseModel
 from .connections import cache
-from .content import Notification, Thought, Blog, Upvote
-from .context import Dialogue, Mindset, Mindspace
+# from .content import Notification, Thought, Blog, Upvote
+# from .context import Dialogue, Mindset, Mindspace
 
 
-class User(UserMixin, Model):
+class User(Model, UserMixin):
     """A user of the website"""
 
     __tablename__ = 'user'
@@ -88,11 +90,11 @@ class User(UserMixin, Model):
         if not self.email_catchall:
             if notification.email_pref:
                 if getattr(self, notification.email_pref) is True:
-                    c = Notification.query \
+                    c = content.Notification.query \
                         .filter_by(recipient=notification.recipient) \
                         .filter_by(url=notification.url) \
                         .filter_by(unread=True) \
-                        .filter(Notification.id != notification.id)
+                        .filter(content.Notification.id != notification.id)
 
                     if c.count() == 0:
                         rv = True
@@ -226,7 +228,7 @@ class Identity(Model):
     def notification_list(self, limit=5):
         return self.notifications \
             .filter_by(unread=True) \
-            .order_by(Notification.modified.desc()) \
+            .order_by(content.Notification.modified.desc()) \
             .limit(limit) \
             .all()
 #
@@ -294,7 +296,7 @@ class Persona(Identity):
             integer: Attention as a positive integer
         """
         timer = ExecutionTimer()
-        thoughts = Thought.query \
+        thoughts = content.Thought.query \
             .filter_by(author=self)
 
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
@@ -314,15 +316,15 @@ class Persona(Identity):
                 modified: last thought in the conversation
         """
         timer = ExecutionTimer()
-        convs_query = Dialogue.query \
+        convs_query = context.Dialogue.query \
             .filter(or_(
-                Dialogue.author == self,
-                Dialogue.other == self
+                context.Dialogue.author == self,
+                context.Dialogue.other == self
             )).all()
 
         convs = list()
         for c in convs_query:
-            last_post = c.index.order_by(Thought.created.desc()).first()
+            last_post = c.index.order_by(content.Thought.created.desc()).first()
             if last_post:
                 other = c.other if c.author == self else c.author
                 conv_dict = dict(
@@ -390,8 +392,8 @@ class Persona(Identity):
         rv.append(self.blog)
 
         # Is a movement member
-        rv = rv + Mindset.query \
-            .join(Movement, Movement.mindspace_id == Mindset.id) \
+        rv = rv + context.Mindset.query \
+            .join(Movement, Movement.mindspace_id == context.Mindset.id) \
             .filter(Movement.id.in_([m["id"] for m in self.movements()])).all()
         return [ms.id for ms in rv]
 
@@ -561,12 +563,12 @@ class Movement(Identity):
     def __init__(self, *args, **kwargs):
         """Attach index mindset to new movements"""
         Identity.__init__(self, *args, **kwargs)
-        self.blog = Blog(
+        self.blog = context.Blog(
             id=uuid4().hex,
             author=self,
             modified=self.created)
 
-        self.mindspace = Mindspace(
+        self.mindspace = context.Mindspace(
             id=uuid4().hex,
             author=self,
             modified=self.created)
@@ -624,12 +626,12 @@ class Movement(Identity):
         timer = ExecutionTimer()
 
         thoughts = self.blog.index \
-            .filter(Thought.state >= 0) \
-            .filter(Thought.kind != "upvote").all()
+            .filter(content.Thought.state >= 0) \
+            .filter(content.Thought.kind != "upvote").all()
 
         thoughts += self.mindspace.index \
-            .filter(Thought.state >= 0) \
-            .filter(Thought.kind != "upvote").all()
+            .filter(content.Thought.state >= 0) \
+            .filter(content.Thought.kind != "upvote").all()
 
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
@@ -715,9 +717,9 @@ class Movement(Identity):
             list: Dicts with key 'id'
         """
         timer = ExecutionTimer()
-        selection = self.mindspace.index.filter(Thought.state >= 0).all()
+        selection = self.mindspace.index.filter(content.Thought.state >= 0).all()
         rv = [t.id for t in sorted(
-            selection, key=Thought.hot, reverse=True)[:count]]
+            selection, key=content.Thought.hot, reverse=True)[:count]]
         timer.stop("Generated {} mindspace top thought".format(self))
         return rv
 
@@ -736,8 +738,8 @@ class Movement(Identity):
                 and thought.mindset.kind == "mindspace":
             if thought.upvote_count() >= self.required_votes():
                 logger.info("Promoting {} to {} blog".format(thought, self))
-                clone = Thought.clone(thought, self, self.blog)
-                upvote = Upvote(id=uuid4().hex,
+                clone = content.Thought.clone(thought, self, self.blog)
+                upvote = content.Upvote(id=uuid4().hex,
                     author=self, parent=clone, state=0)
                 clone.children.append(upvote)
                 thought._blogged = True

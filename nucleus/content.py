@@ -11,6 +11,9 @@ import datetime
 import os
 import re
 
+import context
+import identity
+
 from collections import defaultdict
 from flask import url_for
 from flask.ext.login import current_user
@@ -21,21 +24,20 @@ from soundcloud import Client as SoundcloudClient
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, \
     ForeignKey, Text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import relationship, backref
 
 from . import ATTACHMENT_KINDS, logger, TOP_THOUGHT_CACHE_DURATION, \
     UPVOTE_CACHE_DURATION, ExecutionTimer, PersonaNotFoundError, \
     UnauthorizedError, IFRAME_URL_CACHE_DURATION
-from .base import Base, BaseModel
-from .connections import cache
-from .context import Dialogue, Mindset, Mindspace
+from .base import Model, BaseModel
+from .connections import cache, db
 from .helpers import process_attachments
-from .identity import Movement, Persona
 from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
     refresh_upvote_count, check_promotion
 
 
-class Thought(Base):
+class Thought(Model):
     """A Thought represents a post"""
 
     __tablename__ = "thought"
@@ -64,9 +66,9 @@ class Thought(Base):
         primaryjoin="identity.c.id==thought.c.author_id", lazy="joined")
     author_id = Column(String(32), ForeignKey('identity.id'))
 
-    # mindset = relationship('Mindset',
-    #     primaryjoin='mindset.c.id==thought.c.mindset_id',
-    #     backref=backref('index', lazy="dynamic"))
+    mindset = relationship('Mindset',
+        primaryjoin='mindset.c.id==thought.c.mindset_id',
+        backref=backref('index', lazy="dynamic"))
     mindset_id = Column(String(32), ForeignKey('mindset.id'))
 
     parent = relationship('Thought',
@@ -112,7 +114,7 @@ class Thought(Base):
             else:
                 if author_id == self.author.id:
                     rv = True
-                elif isinstance(self.author, Movement) \
+                elif isinstance(self.author, identity.Movement) \
                         and author_id == self.author.admin.id:
                     rv = True
         return rv
@@ -220,7 +222,7 @@ class Thought(Base):
             logger.debug("Set new thought author to active persona")
             author = current_user.active_persona
 
-        if mindset is not None and isinstance(mindset, Dialogue):
+        if mindset is not None and isinstance(mindset, context.Dialogue):
             recipient = mindset.author if mindset.author is not author \
                 else mindset.other
             notifications.append(DialogueNotification(
@@ -269,7 +271,7 @@ class Thought(Base):
                 author=author, url=url_for('web.thought', id=thought_id)))
 
         refresh_recent_thoughts.delay()
-        if instance.mindset and isinstance(instance.mindset, Dialogue):
+        if instance.mindset and isinstance(instance.mindset, context.Dialogue):
             refresh_conversation_lists.delay(instance.mindset.id)
 
         return {
@@ -343,10 +345,10 @@ class Thought(Base):
         if filter_blogged:
             top_post_selection = top_post_selection.filter_by(_blogged=False)
 
-        if not isinstance(persona, Persona):
+        if not isinstance(persona, identity.Persona):
             top_post_selection = top_post_selection \
-                .join(Mindset) \
-                .filter(Mindset.kind == "blog")
+                .join(context.Mindset) \
+                .filter(context.Mindset.kind == "blog")
 
         else:
             sources = persona.frontpage_sources()
@@ -428,7 +430,7 @@ class Thought(Base):
 
             author = current_user.active_persona
         else:
-            author = Persona.query.get(author_id)
+            author = identity.Persona.query.get(author_id)
 
         if author is None:
             raise PersonaNotFoundError("Upvote author not found")
@@ -463,14 +465,14 @@ class Thought(Base):
             refresh_upvote_count.delay(self.id)
 
             if upvote.state == 0 and \
-                isinstance(self.mindset, Mindspace) and \
-                    isinstance(self.mindset.author, Movement):
+                isinstance(self.mindset, context.Mindspace) and \
+                    isinstance(self.mindset.author, context.Movement):
 
                 check_promotion.delay(self.id)
             return upvote
 
 
-class PerceptAssociation(Base):
+class PerceptAssociation(Model):
     """Associates Percepts with Thoughts, defining an author for the connection"""
 
     __tablename__ = 'percept_association'
@@ -498,7 +500,7 @@ class PerceptAssociation(Base):
         return p_cls.validate_changeset(changeset)
 
 
-class Percept(Base):
+class Percept(Model):
     """A Percept represents an attachment"""
 
     __tablename__ = 'percept'
@@ -521,7 +523,8 @@ class Percept(Base):
         return "<Percept:{} [{}]>".format(self.kind, self.id[:6])
 
 
-class Tag(Base):
+class Tag(Model):
+
     __tablename__ = "tag"
 
     id = Column(String(32), primary_key=True)
@@ -546,7 +549,9 @@ class Tag(Base):
 class TagPercept(Percept):
     """A Tag"""
 
-    id = Column(String(32), ForeignKey('percept.id'), primary_key=True)
+    __tablename__ = 'tag_percept'
+
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
 
     # Relations
     tag_id = Column(String(32), ForeignKey('tag.id'))
@@ -568,7 +573,10 @@ class TagPercept(Percept):
 class Mention(Percept):
     """Mention an Identity to notify them"""
 
-    id = Column(String(32), ForeignKey('percept.id'), primary_key=True)
+    __tablename__ = 'mention'
+
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     text = Column(String(80))
     identity_id = Column(String(32), ForeignKey('identity.id'))
     identity = relationship('Identity', backref="mentions")
@@ -595,11 +603,14 @@ class Mention(Percept):
 class LinkedPicturePercept(Percept):
     """A linked picture attachment"""
 
+    __tablename__ = 'linked_picture_percept'
+
     __mapper_args__ = {
         'polymorphic_identity': 'linkedpicture'
     }
 
-    id = Column(String(32), ForeignKey('percept.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     url = Column(Text)
 
     @classmethod
@@ -630,11 +641,14 @@ class LinkedPicturePercept(Percept):
 class LinkPercept(Percept):
     """A URL attachment"""
 
+    __tablename__ = 'link_percept'
+
     __mapper_args__ = {
         'polymorphic_identity': 'link'
     }
 
-    id = Column(String(32), ForeignKey('percept.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     url = Column(Text)
 
     def get_domain(self):
@@ -721,11 +735,14 @@ class LinkPercept(Percept):
 class TextPercept(Percept):
     """A longform text attachment"""
 
+    __tablename__ = 'text_percept'
+
     __mapper_args__ = {
         'polymorphic_identity': 'text'
     }
 
-    id = Column(String(32), ForeignKey('percept.id'), primary_key=True)
+    id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
+
     text = Column(Text)
 
     @classmethod
@@ -776,7 +793,7 @@ class Upvote(Thought):
         return 0
 
 
-class Notification(Base):
+class Notification(Model):
     """Notification model
 
     Attributes:

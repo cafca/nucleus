@@ -135,14 +135,14 @@ class QueryProperty(object):
     def __init__(self, session):
         self.session = session
 
-    def __get__(self, model, model_class):
-        mapper = orm.class_mapper(model_class)
+    def __get__(self, model, Model):
+        mapper = orm.class_mapper(Model)
 
         if mapper:
-            if not getattr(model_class, 'query_class', None):
-                model_class.query_class = BaseQuery
+            if not getattr(Model, 'query_class', None):
+                Model.query_class = BaseQuery
 
-            query_property = model_class.query_class(mapper, session=self.session())
+            query_property = Model.query_class(mapper, session=self.session())
 
             return query_property
 
