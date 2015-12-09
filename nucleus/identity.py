@@ -19,6 +19,7 @@ from uuid import uuid4
 from sqlalchemy import or_, Column, Integer, String, Boolean, DateTime, Table, \
     ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
+from sqlalchemy.orm.session import Session
 
 from . import logger, ATTENTION_CACHE_DURATION, ATTENTION_MULT, \
     ExecutionTimer, CONVERSATION_LIST_CACHE_DURATION, TOP_THOUGHT_CACHE_DURATION, \
@@ -296,7 +297,8 @@ class Persona(Identity):
             integer: Attention as a positive integer
         """
         timer = ExecutionTimer()
-        thoughts = content.Thought.query \
+        ses = Session.object_session(self)
+        thoughts = ses.query(content.Thought) \
             .filter_by(author=self)
 
         rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)

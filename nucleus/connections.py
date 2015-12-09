@@ -9,14 +9,23 @@
 """
 
 import os
+
+from contextlib import contextmanager
 from flask.config import Config
 from flask.ext.sqlalchemy import SQLAlchemy as SQLAlchemyBase
 from flask.ext.cache import Cache
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from .base import set_query_property, Model
 
 config = Config(os.path.join(os.getcwd(), "glia"))
 config.from_envvar("GLIA_CONFIG")
+
+cache = Cache()
+
+engine = create_engine(config.get("SQLALCHEMY_DATABASE_URI"))
+session_factory = sessionmaker(bind=engine)
 
 
 class SQLAlchemy(SQLAlchemyBase):
@@ -40,5 +49,19 @@ class SQLAlchemy(SQLAlchemyBase):
             set_query_property(self.Model, self.session)
         return self.Model
 
-cache = Cache()
+
+@contextmanager
+def session_scope():
+    """Provide a transactional scope around a series of operations."""
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+# SQLAlchemy is managing its own sessions scoped by web requests
 db = SQLAlchemy(model_class=Model)

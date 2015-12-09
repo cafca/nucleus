@@ -13,6 +13,7 @@ import re
 
 import context
 import identity
+import jobs
 
 from collections import defaultdict
 from flask import url_for
@@ -24,7 +25,6 @@ from soundcloud import Client as SoundcloudClient
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, \
     ForeignKey, Text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import relationship, backref
 
 from . import ATTACHMENT_KINDS, logger, TOP_THOUGHT_CACHE_DURATION, \
@@ -33,8 +33,6 @@ from . import ATTACHMENT_KINDS, logger, TOP_THOUGHT_CACHE_DURATION, \
 from .base import Model, BaseModel
 from .connections import cache, db
 from .helpers import process_attachments
-from .jobs import refresh_recent_thoughts, refresh_conversation_lists, \
-    refresh_upvote_count, check_promotion
 
 
 class Thought(Model):
@@ -270,9 +268,9 @@ class Thought(Model):
             notifications.append(ReplyNotification(parent_thought=parent,
                 author=author, url=url_for('web.thought', id=thought_id)))
 
-        refresh_recent_thoughts.delay()
+        jobs.refresh_recent_thoughts.delay()
         if instance.mindset and isinstance(instance.mindset, context.Dialogue):
-            refresh_conversation_lists.delay(instance.mindset.id)
+            jobs.refresh_conversation_lists.delay(instance.mindset.id)
 
         return {
             "instance": instance,
@@ -327,7 +325,7 @@ class Thought(Model):
 
     @classmethod
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
-    def top_thought(cls, persona=None, filter_blogged=False):
+    def top_thought(cls, persona=None, filter_blogged=False, session=None):
         """Return up to 10 hottest thoughts as measured by Thought.hot
 
         Args:
@@ -340,7 +338,8 @@ class Thought(Model):
             list: List of thought ids
         """
         timer = ExecutionTimer()
-        top_post_selection = cls.query.filter(cls.state >= 0)
+
+        top_post_selection = session.query(cls).filter(cls.state >= 0)
 
         if filter_blogged:
             top_post_selection = top_post_selection.filter_by(_blogged=False)
@@ -385,7 +384,7 @@ class Thought(Model):
     upvotes = property(get_upvotes)
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
-    def upvote_count(self):
+    def upvote_count(self, session=None):
         """
         Return the number of verified upvotes this Thought has receieved
 
@@ -397,12 +396,7 @@ class Thought(Model):
         if rv is None:
             self._upvotes = self.upvotes.filter(Upvote.state >= 0).count()
             rv = self._upvotes
-            db.session.add(self)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                logger.exception("Error initial upvote count")
-                db.session.rollback()
+            session.add(self)
         return rv
 
     def text_percepts(self):
@@ -462,13 +456,13 @@ class Thought(Model):
         except SQLAlchemyError:
             logger.exception("Error toggling upvote")
         else:
-            refresh_upvote_count.delay(self.id)
+            jobs.refresh_upvote_count.delay(self.id)
 
             if upvote.state == 0 and \
                 isinstance(self.mindset, context.Mindspace) and \
                     isinstance(self.mindset.author, context.Movement):
 
-                check_promotion.delay(self.id)
+                jobs.check_promotion.delay(self.id)
             return upvote
 
 

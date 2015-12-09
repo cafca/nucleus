@@ -178,11 +178,14 @@ def process_attachments(text):
 
 
 @cache.memoize(timeout=60 * 60 * 24)
-def recent_thoughts():
+def recent_thoughts(session=None):
     """Return 10 most recent Thoughts
 
     Cache is reset when calling Thought.create_from_input
     or Thought.set_state
+
+    Args:
+        session: SA session to use
 
     Returns:
         list: List of IDs
@@ -191,7 +194,12 @@ def recent_thoughts():
     from nucleus.nucleus.context import Mindset
     from nucleus.nucleus.identity import Movement
     timer = ExecutionTimer()
-    res = Thought.query \
+
+    if session is None:
+        from .connections import db
+        session = db.session
+
+    res = session.query(Thought) \
         .filter_by(state=0) \
         .filter_by(kind="thought") \
         .order_by(Thought.created.desc()) \
