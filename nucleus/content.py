@@ -428,7 +428,7 @@ class Thought(Model):
 
         if author_id is None:
             if current_user.is_anonymous():
-                return PersonaNotFoundError("You need to log in for voting")
+                return PersonaNotFoundError("You nee d to log in for voting")
 
             author = current_user.active_persona
         else:
@@ -441,18 +441,21 @@ class Thought(Model):
         upvote = self.upvotes.filter_by(author=author).first()
         if upvote is not None:
             if upvote.state == 0:
-                upvote.set_state(-1)
-                self._upvotes -= 1
+                upvote.state = -1
                 logger.info("Disabling upvote by {} on {}".format(author, self))
             else:
-                upvote.set_state(0)
-                self._upvotes += 1
+                upvote.state = 0
                 logger.info("Enabling upvote by {} on {}".format(author, self))
         else:
             upvote = Upvote(id=uuid4().hex, author=author, parent=self, state=0)
             self.children.append(upvote)
-            self._upvotes += 1
             logger.info("Adding upvote by {} on {}".format(author, self))
+
+        if self._upvotes:
+            if upvote.state < 1:
+                self._upvotes -= 1
+            else:
+                self._upvotes += 1
 
         # Commit Upvote
         session.add(self)
@@ -788,7 +791,7 @@ class Upvote(Thought):
         else:
             return "<Upvote ({})>".format(self.get_state())
 
-    def hot(self):
+    def hot(self, session=None):
         return 0
 
 

@@ -694,6 +694,9 @@ class Movement(Identity):
         if not persona:
             persona = current_user.active_persona
 
+        if session is None:
+            session = db.session
+
         if not current_user or current_user.is_anonymous():
             rv = "anonymous"
         else:
@@ -732,16 +735,22 @@ class Movement(Identity):
         return int(rv)
 
     @cache.memoize(timeout=MINDSPACE_TOP_THOUGHT_CACHE_DURATION)
-    def mindspace_top_thought(self, count=15):
+    def mindspace_top_thought(self, count=15, session=None):
         """Return count top thoughts from mindspace
 
         Returns:
             list: Dicts with key 'id'
         """
         timer = ExecutionTimer()
+        if session is None:
+            session = db.session
+
         selection = self.mindspace.index.filter(content.Thought.state >= 0).all()
+
+        hot = lambda t: content.Thought.hot(t, session=session)
         rv = [t.id for t in sorted(
-            selection, key=content.Thought.hot, reverse=True)[:count]]
+            selection, key=hot, reverse=True)[:count]]
+
         timer.stop("Generated {} mindspace top thought".format(self))
         return rv
 
