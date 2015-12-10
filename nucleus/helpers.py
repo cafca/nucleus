@@ -6,7 +6,7 @@ from goose import Goose
 from sqlalchemy import inspect
 
 from nucleus.nucleus import ExecutionTimer
-from nucleus.nucleus.connections import cache
+from nucleus.nucleus.connections import cache, db
 
 
 # For calculating scores
@@ -62,7 +62,7 @@ def find_links(text):
     return (rv, text)
 
 
-def find_mentions(text):
+def find_mentions(text, session=None):
     """Given some text, find mentioned Identities formatted as "@<username>
 
     Args:
@@ -72,17 +72,20 @@ def find_mentions(text):
         iterable: pairs of (mention_text, Identity_object)
     """
     import identity
-    expr = "@([\S]{3,80})"
     rv = []
+    if session is None:
+        session = db.session
 
-    res = re.findall(expr, text)
+    res = re.findall(identity.USERNAME_RESTRICTION, text)
     for mention_text in res:
-        ident = identity.Identity.query.filter_by(username=mention_text).first()
+        ident = session.query(identity.Identity) \
+            .filter_by(username=mention_text) \
+            .first()
         if ident is not None:
             rv.append((mention_text, ident))
         else:
-            logger.warning("No ident found corresponding to mention \
-                {}".format(mention_text))
+            logger.warning("No ident found corresponding to mention '{}'"
+                .format(mention_text))
 
     return rv
 
@@ -100,14 +103,14 @@ def find_tags(text):
             iterable: list of found tags
             text: input text
     """
-
-    expr = "#([\S]{1,32})"
+    from string import punctuation
+    expr = "#([^\s" + punctuation + "]{1,32})"
     text_new = text
 
     rv = re.findall(expr, text)[::-1]
     for tag in rv:
-        if(text_new.index(tag) + len(tag)) == len(text_new.rstrip()):
-            text_new = text_new.replace("#{}".format(tag), "")
+        if(text_new.index(tag) + len(tag)) == len(text_new):
+            text_new = text_new.replace("#{}".format(tag), "").rstrip()
 
     return (rv, text_new) if len(text_new) > 0 else (rv, text)
 
@@ -159,21 +162,10 @@ def process_attachments(text):
             if inspect(linkpercept).transient is True:
                 linkpercept.title = page.title
 
-            # Extract article contents as new Percept
-            if len(page.cleaned_text) > 300:
-                # Temporarily disable automatic text attachment
-
-                # textpercept = TextPercept.get_or_create(page.cleaned_text)
-                # textpercept.source = link.url
-
-                # percepts.add(textpercept)
-                pass
-
-            if len(text) == 0:
-                text = page.title
+            text = page.title
         percepts.add(linkpercept)
 
-    return (text, percepts)
+    return (text, list(percepts))
 
 
 @cache.memoize(timeout=60 * 60 * 24)

@@ -409,7 +409,7 @@ class Thought(Model):
         """Return TextPercepts of this Thought"""
         return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
 
-    def toggle_upvote(self, author_id=None):
+    def toggle_upvote(self, author_id=None, session=None):
         """
         Toggle Upvote for this Thought on/off
 
@@ -423,6 +423,8 @@ class Thought(Model):
             PersonaNotFoundError: Upvote author not found
             UnauthorizedError: Author is a foreign Persona
         """
+        if session is None:
+            session = db.session
 
         if author_id is None:
             if current_user.is_anonymous():
@@ -430,13 +432,10 @@ class Thought(Model):
 
             author = current_user.active_persona
         else:
-            author = identity.Persona.query.get(author_id)
+            author = session.query(identity.Persona).get(author_id)
 
         if author is None:
             raise PersonaNotFoundError("Upvote author not found")
-
-        if not author == current_user.active_persona:
-            raise UnauthorizedError("Can't toggle Upvotes with foreign Persona {}".format(author))
 
         # Check whether Upvote has been previously issued
         upvote = self.upvotes.filter_by(author=author).first()
@@ -456,9 +455,9 @@ class Thought(Model):
             logger.info("Adding upvote by {} on {}".format(author, self))
 
         # Commit Upvote
-        db.session.add(self)
+        session.add(self)
         try:
-            db.session.commit()
+            session.commit()
         except SQLAlchemyError:
             logger.exception("Error toggling upvote")
         else:
@@ -466,7 +465,7 @@ class Thought(Model):
 
             if upvote.state == 0 and \
                 isinstance(self.mindset, context.Mindspace) and \
-                    isinstance(self.mindset.author, context.Movement):
+                    isinstance(self.mindset.author, identity.Movement):
 
                 jobs.check_promotion.delay(self.id)
             return upvote

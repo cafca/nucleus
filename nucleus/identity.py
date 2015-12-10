@@ -30,7 +30,10 @@ from . import logger, ATTENTION_CACHE_DURATION, ATTENTION_MULT, \
 
 from .base import Model, BaseModel
 from .connections import cache
+from nucleus.nucleus import make_key
 from nucleus.nucleus.connections import db
+
+USERNAME_RESTRICTION = "@([^\s\.!,;/]{3,80})"
 
 
 class User(Model, UserMixin):
@@ -428,7 +431,7 @@ class Persona(Identity):
         return following
 
     def toggle_movement_membership(self, movement, role="member",
-            invitation_code=None):
+            invitation_code=None, session=None):
         """Toggle whether this Persona is member of a movement.
 
         Also enables movement following for this Persona/Movement.
@@ -443,28 +446,29 @@ class Persona(Identity):
         Returns:
             Updated MovementMemberAssociation object
         """
-        if invitation_code and len(invitation_code) > 0:
-            mma = MovementMemberAssociation.query \
-                .filter_by(invitation_code=invitation_code) \
-                .first()
-        else:
-            mma = MovementMemberAssociation.query \
-                .filter_by(movement=movement) \
-                .filter_by(persona=self) \
-                .first()
+        if session is None:
+            session = db.session
+
+        valid_invitation = movement.valid_invitation_code(invitation_code)
+        mma = session.query(MovementMemberAssociation) \
+            .filter_by(movement=movement) \
+            .filter_by(persona=self) \
+            .first()
+
+        if mma and valid_invitation and isinstance(
+                valid_invitation, MovementMemberAssociation):
+            mma.invitation_code = valid_invitation.invitation_code
 
         # Follow movement when joining
         if movement not in self.blogs_followed and (mma is None or not mma.active):
             logger.info("Setting {} to follow {}.".format(self, movement))
             self.toggle_following(movement)
 
-        # Validate invitation code
-        if mma is None or (mma.active is False and mma.invitation_code != invitation_code):
-            if movement.private and current_user.active_persona != movement.admin:
-                logger.warning("Invalid invitation code '{}'".format(invitation_code))
-                raise UnauthorizedError("Invalid invitation code '{}'".format(invitation_code))
-
         if mma is None:
+            if not valid_invitation and self != movement.admin:
+                raise UnauthorizedError("Invalid invitation code '{}'".format(
+                    invitation_code))
+
             logger.info("Enabling membership of {} in {}".format(self, movement))
             mma = MovementMemberAssociation(
                 persona=self,
@@ -473,6 +477,10 @@ class Persona(Identity):
             )
 
         elif mma.active is False:
+            if not valid_invitation and self != movement.admin:
+                raise UnauthorizedError("Invalid invitation code '{}'".format(
+                    invitation_code))
+
             mma.active = True
             mma.role = role
             logger.info("Membership of {} in {} re-enabled".format(self, movement))
@@ -489,6 +497,10 @@ class Persona(Identity):
         cache.delete_memoized(self.movements)
         cache.delete_memoized(self.repost_mindsets)
         cache.delete_memoized(self.frontpage_sources)
+
+        if valid_invitation and isinstance(valid_invitation,
+                MovementMemberAssociation):
+            session.delete(valid_invitation)
 
         return mma
 
@@ -515,8 +527,10 @@ class MovementMemberAssociation(Model):
     invitation_code = Column(String(32))
 
     def __repr__(self):
-        return "<Membership <Movement {}> <Persona {}> ({})>".format(
-            self.movement.id[:6], self.persona.id[:6], self.role)
+        return "<Membership <Movement {}> {} ({})>".format(
+            self.movement.id[:6],
+            self.persona.id[:6] if self.persona else "anon",
+            self.role)
 
 
 t_members = Table('members',
@@ -569,7 +583,7 @@ class Movement(Identity):
     def __repr__(self):
         try:
             name = self.username.encode('utf-8')
-        except AttributeError:
+        except (AttributeError, UnicodeDecodeError):
             name = "(name encode error)"
 
         return "<Movement @{} [{}]>".format(name, self.id[:6])
@@ -602,14 +616,16 @@ class Movement(Identity):
             rv = True if gms else False
         return rv
 
-    def add_member(self, persona):
-        """Add a Persona as member to this movement
+    def create_invitation(self):
+        """Return a new invitation (blank MovementMemberAssociation)"""
 
-        Args:
-            persona (Persona): Persona object to be added
-        """
-        if persona not in self.members:
-            self.members.append(persona)
+        mma = MovementMemberAssociation(
+            movement=self,
+            role="invited",
+            active=False,
+            invitation_code=make_key()
+        )
+        return mma
 
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
     def get_attention(self):
@@ -634,7 +650,7 @@ class Movement(Identity):
 
     attention = property(get_attention)
 
-    def authorize(self, action, author_id=None):
+    def authorize(self, action, author_id=None, session=None):
         """Return True if this Movement authorizes `action` for `author_id`
 
         Args:
@@ -644,12 +660,15 @@ class Movement(Identity):
         Returns:
             Boolean: True if authorized
         """
+        if session is None:
+            session = db.session
+
         rv = False
         if BaseModel.authorize(self, action, author_id=author_id):
             if action == "read":
                 rv = True
                 if self.private:
-                    member = MovementMemberAssociation.query \
+                    member = session.query(MovementMemberAssociation) \
                         .filter_by(movement=self) \
                         .filter_by(active=True) \
                         .filter_by(persona_id=author_id) \
@@ -665,18 +684,23 @@ class Movement(Identity):
         """Alias for Movememt.members for compatibility with Persona class"""
         return self.members.filter_by(active=True)
 
-    def current_role(self):
+    def current_role(self, persona=None, session=None):
         """Return role of the currently active Persona
 
         Returns:
             String: Name  of the role. One of "anonymous", "visitor",
                 "member", "admin"
         """
+        if not persona:
+            persona = current_user.active_persona
+
         if not current_user or current_user.is_anonymous():
             rv = "anonymous"
         else:
-            gma = MovementMemberAssociation.query.filter_by(movement_id=self.id). \
-                filter_by(persona_id=current_user.active_persona.id).first()
+            gma = session.query(MovementMemberAssociation) \
+                .filter_by(movement_id=self.id) \
+                .filter_by(persona_id=persona.id) \
+                .first()
 
             if gma is None:
                 rv = "visitor"
@@ -689,14 +713,17 @@ class Movement(Identity):
         return url_for("web.movement", id=self.id)
 
     @cache.memoize(timeout=MEMBER_COUNT_CACHE_DURATION)
-    def member_count(self):
+    def member_count(self, session=None):
         """Return number of active members in this movement
 
         Returns:
             int: member count
         """
+        if session is None:
+            session = db.session
+
         timer = ExecutionTimer()
-        rv = MovementMemberAssociation.query \
+        rv = session.query(MovementMemberAssociation) \
             .filter_by(movement=self) \
             .filter_by(active=True) \
             .count()
@@ -743,16 +770,7 @@ class Movement(Identity):
                 rv = clone
         return rv
 
-    def remove_member(self, persona):
-        """Remove a Persona from this movement's local member list
-
-        Args:
-            persona (Persona): Persona object to be removed
-        """
-        if persona in self.members:
-            self.members.remove(persona)
-
-    def required_votes(self):
+    def required_votes(self, session=None):
         """Return the number of votes required to promote a Thought ot the blog
 
         n = round(count/100 + 2/count + (log(1.65,count)))
@@ -762,9 +780,9 @@ class Movement(Identity):
             int: Number of votes required
         """
         from math import log
-        c = self.member_count()
+        c = self.member_count(session=session)
         rv = int(c / 100.0 + 0.8 / c + log(c, 1.65)) if c > 0 else 1
-        return rv
+        return max(rv, 1)
 
     @classmethod
     @cache.memoize(timeout=TOP_MOVEMENT_CACHE_DURATION)
@@ -795,7 +813,30 @@ class Movement(Identity):
         timer.stop("Generated top movements")
         return rv
 
-    def voting_done(self, thought):
+    def valid_invitation_code(self, code, session=None):
+        """Return True if valid invitation code for this movement
+
+        Returns:
+            Bolean: True for public movements, MMA for valid invitations
+                and False for invalid invitation codes
+        """
+        rv = False
+        if session is None:
+            session = db.session
+
+        if self.private is False:
+            rv = True
+        elif code and len(code) > 0:
+            invitation = session.query(MovementMemberAssociation) \
+                .filter_by(movement=self) \
+                .filter_by(invitation_code=code) \
+                .first()
+            if invitation and invitation.invitation_code == code \
+                    and code is not None:
+                rv = invitation
+        return rv
+
+    def voting_done(self, thought, session=None):
         """Provide a value in [0,1] indicating how many votes have been cast
             toward promoting a thought. For already blogged thoughts 1 is also
             returned
@@ -806,9 +847,9 @@ class Movement(Identity):
         if thought._blogged:
             rv = 1
         else:
-            req = self.required_votes()
+            req = self.required_votes(session=session)
             rv = 1
             if req > 0:
-                rv = min([float(thought.upvote_count()) /
+                rv = min([float(thought.upvote_count(session=session)) /
                     self.required_votes(), 1.0])
         return rv

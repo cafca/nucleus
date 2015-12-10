@@ -159,6 +159,16 @@ def movements(session, request, personas):
     logging.warning("Generated {} in {}".format(rv, session))
     return rv
 
+
+@pytest.fixture(scope="function")
+def movement_with_thoughts(session, movements, thoughts):
+    for t in thoughts:
+        t.mindset = movements[0].mindspace
+        session.add(t)
+    session.commit()
+    return movements[0]
+
+
 #
 # Content fixtures
 #
@@ -167,9 +177,8 @@ def movements(session, request, personas):
 @pytest.fixture(scope="function")
 def thoughts(personas, session):
     rv = []
-    created_dt = datetime.datetime.utcnow()
-
     for persona in personas:
+        created_dt = datetime.datetime.utcnow()
         ident = make_key()
         t1 = Thought(
             id=ident,
@@ -180,6 +189,7 @@ def thoughts(personas, session):
         rv.append(t1)
 
         ident = make_key()
+        created_dt = datetime.datetime.utcnow()
         t2 = Thought(
             id=ident,
             created=created_dt,
