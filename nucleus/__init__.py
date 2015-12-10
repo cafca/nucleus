@@ -2,6 +2,8 @@ import logging
 import blinker
 import time
 
+from uuid import uuid4
+
 UPVOTE_CACHE_DURATION = 60 * 10
 
 ATTENTION_CACHE_DURATION = 60 * 10
@@ -61,3 +63,8 @@ class PersonaNotFoundError(Exception):
 class UnauthorizedError(Exception):
     """Throw this error when the active Persona is not authorized for an action"""
     pass
+
+
+def make_key():
+    """Return a unique 32 byte key"""
+    return uuid4().hex[:32]

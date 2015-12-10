@@ -7,7 +7,7 @@
 
     :copyright: (c) 2015 by Vincent Ahrend.
 """
-from nucleus.nucleus.connections import session_scope, db, cache
+from nucleus.nucleus.connections import db as _db, session_scope, cache
 
 
 def test_scoped_session():
@@ -16,9 +16,9 @@ def test_scoped_session():
         assert hasattr(session, 'query')
 
 
-def test_flask_session():
+def test_flask_session(app):
     """Test whether the Flask-SQLAlchemy session is created"""
-    assert hasattr(db.session, 'query')
+    assert hasattr(_db.session, 'query')
 
 
 def test_cache(app):

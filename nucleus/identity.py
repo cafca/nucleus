@@ -223,7 +223,10 @@ class Identity(Model):
             Boolean: True if authorized
         """
         if BaseModel.authorize(self, action, author_id=author_id):
-            return (self.id == author_id)
+            if action == "read":
+                return True
+            else:
+                return (self.id == author_id)
         return False
 
     def notification_list(self, limit=5):
