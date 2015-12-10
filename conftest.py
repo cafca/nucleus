@@ -3,6 +3,7 @@ import os.path
 import sys
 import pytest
 import datetime
+import logging
 
 # This directory will not be added to PYTHONPATH by py.test when run here
 # because its parent dir is a module
@@ -13,7 +14,7 @@ from nucleus.connections import db as _db
 from nucleus import make_key
 from nucleus.content import Thought, ReplyNotification, \
     MentionNotification, Mention
-from nucleus.identity import User, Persona
+from nucleus.identity import User, Persona, Movement
 from nucleus.context import Mindspace, Blog
 
 
@@ -24,7 +25,8 @@ def app(request):
     settings_override = {
         'TESTING': True,
         # 'SQLALCHEMY_DATABASE_URI': "postgresql://localhost/glia_test"
-        'SQLALCHEMY_DATABASE_URI': "sqlite://"
+        'SQLALCHEMY_DATABASE_URI': "sqlite://",
+        'CACHE_TYPE': "null"
     }
 
     app = create_app(__name__, settings_override)
@@ -77,29 +79,34 @@ def session(db, request):
 
 
 @pytest.fixture(scope="function")
+def persona(session, request):
+    created_dt = datetime.datetime.utcnow()
+    ident = make_key()
+    persona = Persona(
+        id=ident,
+        username="Alice-{}".format(ident[:2]),
+        created=created_dt,
+        modified=created_dt,
+        color="0b3954")
+
+    persona.mindspace = Mindspace(
+        id=make_key(),
+        author=persona)
+
+    persona.blog = Blog(
+        id=make_key(),
+        author=persona)
+
+    session.add(persona)
+    session.commit()
+    return persona
+
+
+@pytest.fixture(scope="function")
 def personas(session, request):
     rv = []
     for i in range(2):
-        created_dt = datetime.datetime.utcnow()
-        ident = make_key()
-        persona = Persona(
-            id=ident,
-            username="Alice-{}".format(ident[:2]),
-            created=created_dt,
-            modified=created_dt,
-            color="0b3954")
-
-        persona.mindspace = Mindspace(
-            id=make_key(),
-            author=persona)
-
-        persona.blog = Blog(
-            id=make_key(),
-            author=persona)
-
-        session.add(persona)
-        session.commit()
-        rv.append(persona)
+        rv.append(persona(session, request))
     return rv
 
 
@@ -123,6 +130,34 @@ def user(session, personas, request):
     session.commit()
 
     return user
+
+
+@pytest.fixture(scope="function")
+def movements(session, request, personas):
+    rv = []
+    for i in range(2):
+        created_dt = datetime.datetime.utcnow()
+        ident = make_key()
+        movement = Movement(
+            id=ident,
+            username="Movement-{}".format(ident[:2]),
+            description="Doin' good",
+            created=created_dt,
+            modified=created_dt,
+            color="0b3954",
+            admin=personas[i])
+
+        personas[i].toggle_movement_membership(movement, role="admin")
+
+        session.add(movement)
+        session.commit()
+        rv.append(movement)
+
+    for obj in rv:
+        session.add(obj)
+    session.commit()
+    logging.warning("Generated {} in {}".format(rv, session))
+    return rv
 
 #
 # Content fixtures
@@ -153,11 +188,6 @@ def thoughts(personas, session):
             parent=t1
         )
         rv.append(t2)
-
-    for obj in rv:
-        session.add(obj)
-    session.commit()
-
     return rv
 
 

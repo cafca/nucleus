@@ -289,9 +289,9 @@ class Thought(Model):
 
         return first is not None
 
-    def hot(self):
+    def hot(self, session=None):
         from math import pow
-        s = self.upvote_count()
+        s = self.upvote_count(session=session)
         t = (datetime.datetime.utcnow() - self.created).total_seconds() / 3600 + 2
         rv = (s / pow(t, 1.5))
         return rv
@@ -395,6 +395,9 @@ class Thought(Model):
             Int: Number of upvotes
         """
         rv = self._upvotes
+
+        if session is None:
+            session = db.session
 
         if rv is None:
             self._upvotes = self.upvotes.filter(Upvote.state >= 0).count()

@@ -10,8 +10,9 @@
 import datetime
 
 from nucleus.nucleus import make_key
-from nucleus.nucleus.identity import Identity
+from nucleus.nucleus.identity import Identity, Movement
 from nucleus.nucleus.content import Thought, ReplyNotification
+from nucleus.nucleus.context import Dialogue
 
 #
 # Tests for models
@@ -19,6 +20,9 @@ from nucleus.nucleus.content import Thought, ReplyNotification
 
 
 class TestUser:
+    def test_persona_association(self, user):
+        assert user == user.associations[0].user
+
     def test_password(self, user):
         assert user.check_password("test")
         user.set_password('test-1')
@@ -64,3 +68,78 @@ class TestIdentity():
     def test_notification_list(self, notifications):
         persona = notifications[0].recipient
         assert len(persona.notification_list()) > 0
+
+
+class TestPersona():
+    def test_repr(self, persona):
+        assert len(persona.__repr__()) > 0
+
+    def test_attention(self, thoughts):
+        persona = thoughts[0].author
+        assert isinstance(persona.get_attention(), int)
+
+    def test_conversation_list(self, thoughts, session):
+        personas = list(set(t.author for t in thoughts))
+
+        assert len(personas[0].conversation_list()) == 0
+
+        d = Dialogue(
+            id=make_key(),
+            author=personas[0],
+            other=personas[1])
+
+        assert len(personas[0].conversation_list()) == 0
+
+        map(d.index.append, thoughts)
+        session.add(d)
+        session.commit()
+
+        assert len(personas[0].conversation_list()) > 0
+
+    def test_follow_top_movements(self, persona, movements, session):
+        persona.follow_top_movements(session=session)
+
+        session.add(persona)
+        session.commit()
+
+        assert len(persona.blogs_followed) > 0
+
+    def test_frontpage_sources(self, persona, movements, session):
+        print "test_frontpage_sources session", session
+        persona.follow_top_movements(session=session)
+
+        session.add(persona)
+        session.commit()
+
+        fps = persona.frontpage_sources()
+        assert len(fps) > 0
+        assert isinstance(fps[0], basestring)
+
+    def test_absolute_url(self, persona):
+        assert persona.get_absolute_url().startswith("http")
+
+    def test_movement_list(self, movements):
+        assert len(movements[0].admin.movements()) > 0
+
+    def test_repost_mindsets(self, movements):
+        assert len(movements[0].admin.repost_mindsets()) >= 3
+
+    def test_suggested_movements(self, movements, session):
+        p = movements[0].admin
+        suggestions = p.suggested_movements()
+        assert len(suggestions) > 0
+        assert isinstance(suggestions[0], basestring)
+        movements = session.query(Movement).filter(Movement.id.in_(suggestions))
+        for m in movements:
+            assert not m.active_member(persona=p, session=session)
+
+    def test_toggle_following(self, personas):
+        personas[0].toggle_following(personas[1])
+        assert personas[1] in personas[0].blogs_followed
+        personas[0].toggle_following(personas[1])
+        assert personas[1] not in personas[0].blogs_followed
+
+
+class TestMovement():
+    def test_top_movements(self, movements):
+        assert len(Movement.top_movements()) > 0

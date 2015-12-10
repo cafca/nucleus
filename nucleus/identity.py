@@ -30,8 +30,7 @@ from . import logger, ATTENTION_CACHE_DURATION, ATTENTION_MULT, \
 
 from .base import Model, BaseModel
 from .connections import cache
-# from .content import Notification, Thought, Blog, Upvote
-# from .context import Dialogue, Mindset, Mindspace
+from nucleus.nucleus.connections import db
 
 
 class User(Model, UserMixin):
@@ -261,10 +260,8 @@ class Persona(Identity):
 
     id = Column(String(32), ForeignKey('identity.id'), primary_key=True)
 
-    auth = Column(String(32))
     last_connected = Column(DateTime(), default=datetime.datetime.now())
     email = Column(String(120))
-    session_id = Column(String(32))
 
     user_id = Column(String(32),
         ForeignKey('user.id', use_alter=True, name="fk_persona_user"))
@@ -278,20 +275,6 @@ class Persona(Identity):
             name = "encoding_error"
         return "<Persona @{} [{}]>".format(name, self.id[:6])
 
-    def authorize(self, action, author_id=None):
-        """Return True if this Persona authorizes `action` for `author_id`
-
-        Args:
-            action (String): Action to be performed (see Synapse.ACCESS_MODES)
-            author_id (String): Persona ID that wants to perform the action
-
-        Returns:
-            Boolean: True if authorized
-        """
-        if Identity.authorize(self, action, author_id=author_id):
-            return (self.id == author_id)
-        return False
-
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
     def get_attention(self):
         """Return a numberic value indicating attention this Persona has received
@@ -304,7 +287,7 @@ class Persona(Identity):
         thoughts = ses.query(content.Thought) \
             .filter_by(author=self)
 
-        rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
+        rv = int(sum([t.hot(session=ses) for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
 
@@ -342,6 +325,16 @@ class Persona(Identity):
         timer.stop("Generated conversation list for {}".format(self))
         return convs
 
+    def follow_top_movements(self, session=None):
+        """Set this persona to follow top movements"""
+        top_movements = Movement.top_movements(session=session)
+        logger.debug("Letting {} follow {}".format(self,
+            ", ".join([m["username"] for m in top_movements])))
+        for m_data in top_movements:
+            m = session.query(Movement).get(m_data["id"])
+            self.toggle_following(m)
+        cache.delete_memoized(self.suggested_movements)
+
     @cache.memoize(timeout=TOP_THOUGHT_CACHE_DURATION)
     def frontpage_sources(self):
         """Return mindset IDs that provide posts for this Persona's frontpage
@@ -355,14 +348,10 @@ class Persona(Identity):
                 source_idents.add(source.mindspace_id)
             source_idents.add(source.blog_id)
 
-        return source_idents
+        return list(source_idents)
 
     def get_absolute_url(self):
         return url_for('web.persona', id=self.id)
-
-    def get_email_hash(self):
-        """Return sha256 hash of this user's email address"""
-        return sha256(self.email).hexdigest()
 
     @cache.memoize(timeout=PERSONA_MOVEMENTS_CACHE_DURATION)
     def movements(self):
@@ -375,8 +364,7 @@ class Persona(Identity):
         user_movements = Movement.query \
             .join(MovementMemberAssociation) \
             .filter(MovementMemberAssociation.active == True) \
-            .filter(MovementMemberAssociation.persona
-                 == current_user.active_persona) \
+            .filter(MovementMemberAssociation.persona == self) \
             .order_by(Movement.username)
 
         rv = [dict(id=m.id, username=m.username)
@@ -403,7 +391,7 @@ class Persona(Identity):
         return [ms.id for ms in rv]
 
     @cache.memoize(timeout=SUGGESTED_MOVEMENTS_CACHE_DURATION)
-    def suggested_movements(self):
+    def suggested_movements(self, session=None):
         """Return a list of IDs for movements that are not followed but have
         many members.
 
@@ -411,7 +399,7 @@ class Persona(Identity):
             list: IDs of Movements
         """
         timer = ExecutionTimer()
-        mov_selection = Movement.top_movements()
+        mov_selection = Movement.top_movements(session=session)
         user_movs = [mma.movement.id for mma in self.movement_assocs]
         rv = [m['id'] for m in mov_selection if m['id'] not in user_movs]
         timer.stop("Generated suggested movements for {}".format(self))
@@ -586,7 +574,7 @@ class Movement(Identity):
 
         return "<Movement @{} [{}]>".format(name, self.id[:6])
 
-    def active_member(self, persona=None):
+    def active_member(self, persona=None, session=None):
         """Return True if persona or currently active Persona is an active
             member or admin
 
@@ -598,12 +586,14 @@ class Movement(Identity):
             boolean: True if active member
         """
         rv = False
+        if session is None:
+            session = db.session
 
         if persona is None and current_user.is_anonymous() is False:
             persona = current_user.active_persona
 
         if persona:
-            gms = MovementMemberAssociation.query \
+            gms = session.query(MovementMemberAssociation) \
                 .filter_by(persona=persona) \
                 .filter_by(active=True) \
                 .filter_by(movement=self) \
@@ -778,14 +768,18 @@ class Movement(Identity):
 
     @classmethod
     @cache.memoize(timeout=TOP_MOVEMENT_CACHE_DURATION)
-    def top_movements(cls, count=10):
+    def top_movements(cls, count=10, session=None):
         """Return a list of top movements as measured by member count
 
         Returns:
             list: List of dicts with keys 'id', 'username'
         """
         timer = ExecutionTimer()
-        movements = Movement.query \
+
+        if session is None:
+            session = db.session
+
+        movements = session.query(Movement) \
             .join(MovementMemberAssociation) \
             .order_by(func.count(MovementMemberAssociation.persona_id)) \
             .group_by(MovementMemberAssociation.persona_id) \
