@@ -2,6 +2,7 @@ import os
 import os.path
 import sys
 import pytest
+import redis
 import datetime
 import logging
 
@@ -9,9 +10,11 @@ import logging
 # because its parent dir is a module
 sys.path.append(os.path.join(os.getcwd(), '..'))
 
+from rq import Queue
+
 from glia import create_app
-from nucleus.connections import db as _db
 from nucleus import make_key
+from nucleus.connections import db as _db
 from nucleus.content import Thought, ReplyNotification, \
     MentionNotification, Mention
 from nucleus.identity import User, Persona, Movement
@@ -37,6 +40,12 @@ def app(request):
 
     def teardown():
         ctx.pop()
+
+        # Remove Redis jobs
+        redis_url = os.getenv('REDISTOGO_URL', 'redis://localhost:6379')
+        conn = redis.from_url(redis_url)
+        for l in ['high', 'default', 'low']:
+            Queue(l, connection=conn).empty()
 
     request.addfinalizer(teardown)
     return app
@@ -176,6 +185,7 @@ def movement_with_thoughts(session, movements, thoughts):
 
 @pytest.fixture(scope="function")
 def thoughts(personas, session):
+    """Return two thoughts for each of two authors"""
     rv = []
     for persona in personas:
         created_dt = datetime.datetime.utcnow()
