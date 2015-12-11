@@ -115,7 +115,7 @@ def find_tags(text):
     return (rv, text_new) if len(text_new) > 0 else (rv, text)
 
 
-def process_attachments(text):
+def process_attachments(text, session=None):
     """Given some text a user entered, extract all attachments
     hinted at and return user message plus a list of Percept objects.
 
@@ -149,13 +149,15 @@ def process_attachments(text):
     links, text = find_links(text)
     for link in links:
         if "content-type" in link.headers and link.headers["content-type"][:5] == "image":
-            linkpercept = content.LinkedPicturePercept.get_or_create(link.url)
+            linkpercept = content.LinkedPicturePercept.get_or_create(link.url,
+                session=session)
 
             # Use picture filename as user message if empty
             if len(text) == 0:
                 text = link.url[(link.url.rfind('/') + 1):]
         else:
-            linkpercept = content.LinkPercept.get_or_create(link.url)
+            linkpercept = content.LinkPercept.get_or_create(link.url,
+                session=session)
             page = g.extract(url=link.url)
 
             # Add metadata if percept object is newly created

@@ -347,7 +347,7 @@ class Persona(Identity):
         """
         source_idents = set()
         for source in self.blogs_followed:
-            if isinstance(source, Movement) and source.active_member(persona=self):
+            if isinstance(source, Movement):
                 source_idents.add(source.mindspace_id)
             source_idents.add(source.blog_id)
 
@@ -754,7 +754,7 @@ class Movement(Identity):
         timer.stop("Generated {} mindspace top thought".format(self))
         return rv
 
-    def promotion_check(self, thought):
+    def promotion_check(self, thought, session=None):
         """Promote a Thought to this movement's blog if it has enough upvotes
 
         Args:
@@ -767,7 +767,7 @@ class Movement(Identity):
         rv = None
         if not thought._blogged and thought.mindset \
                 and thought.mindset.kind == "mindspace":
-            if thought.upvote_count() >= self.required_votes():
+            if thought.upvote_count(session=session) >= self.required_votes():
                 logger.info("Promoting {} to {} blog".format(thought, self))
                 clone = content.Thought.clone(thought, self, self.blog)
                 upvote = content.Upvote(id=uuid4().hex,

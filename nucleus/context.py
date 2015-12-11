@@ -119,7 +119,7 @@ class Mindspace(Mindset):
         if isinstance(self.author, identity.Persona):
             rv = (author_id == self.author.id)
         elif isinstance(self.author, identity.Movement):
-            rv = self.author.authorize(action, author_id)
+            rv = self.author.authorize(action, author_id=author_id)
         return rv
 
     def get_absolute_url(self):

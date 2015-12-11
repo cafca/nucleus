@@ -98,9 +98,9 @@ class Thought(Model):
             # Thoughts may be read by anyone who may see their mindset/parent
             if action == "read":
                 if self.mindset is not None:
-                    rv = self.mindset.authorize("read", author_id)
+                    rv = self.mindset.authorize("read", author_id=author_id)
                 else:
-                    rv = self.parent.authorize("read", author_id)
+                    rv = self.parent.authorize("read", author_id=author_id)
 
             # Other actions are allowed for the Thought author
             # and administrators of its mindset context
@@ -108,7 +108,7 @@ class Thought(Model):
                 if author_id == self.author.id:
                     rv = True
                 elif self.mindset:
-                    rv = self.mindset.authorize(action, author_id)
+                    rv = self.mindset.authorize(action, author_id=author_id)
             else:
                 if author_id == self.author.id:
                     rv = True
@@ -178,14 +178,15 @@ class Thought(Model):
         return self._comment_count
 
     def get_comments(self):
-        return [thought for thought in self.children if thought.kind == "thought"]
+        return [thought for thought in self.children
+            if thought.kind == "thought"]
 
     comments = property(get_comments)
 
     @classmethod
     def create_from_input(cls, text, author=None, longform=None,
             longform_source=None, mindset=None, parent=None,
-            extract_percepts=True):
+            extract_percepts=True, session=None):
         """Create a new Thought object from user input
 
         Args:
@@ -215,8 +216,8 @@ class Thought(Model):
 
         if author is None:
             if current_user.is_anonymous():
-                raise ValueError("Thought author can't be anonymous ({}).".format(
-                    author))
+                raise ValueError(
+                    "Thought author can't be anonymous ({}).".format(author))
             logger.debug("Set new thought author to active persona")
             author = current_user.active_persona
 
@@ -238,16 +239,19 @@ class Thought(Model):
 
         if extract_percepts:
             text, percepts = process_attachments(instance.text)
+            percepts = set(percepts)
             instance.text = text
-            logger.debug("Extracted {} percepts from title".format(len(percepts)))
+            logger.debug("Extracted {} percepts from title".format(
+                len(percepts)))
 
             if longform and len(longform) > 0:
                 lftext, lfpercepts = process_attachments(longform)
                 percepts = percepts.union(lfpercepts)
-                logger.debug("Extracted {} percepts from longform".format(len(percepts)))
+                logger.debug("Extracted {} percepts from longform".format(
+                    len(percepts)))
 
                 lftext_percept = TextPercept.get_or_create(lftext,
-                    source=longform_source)
+                    source=longform_source, session=session)
                 percepts.add(lftext_percept)
                 logger.debug("Attached longform content")
 
@@ -292,14 +296,17 @@ class Thought(Model):
     def hot(self, session=None):
         from math import pow
         s = self.upvote_count(session=session)
-        t = (datetime.datetime.utcnow() - self.created).total_seconds() / 3600 + 2
+        t = (datetime.datetime.utcnow() - self.created) \
+            .total_seconds() / 3600 + 2
         rv = (s / pow(t, 1.5))
         return rv
 
     def update_comment_count(self, incr):
         """Increment comment count by one on this thought and recurse parents"""
         if not isinstance(incr, int):
-            raise ValueError("Can only change comment count by integer values. Got {}: {}".format(type(incr), incr))
+            raise ValueError(
+                "Increment must be integer. Got {}: {}".format(
+                    type(incr), incr))
 
         self._comment_count = self.comment_count() + incr
         if self.parent is not None:
@@ -312,14 +319,13 @@ class Thought(Model):
             String: URL of the first associated Link
             Bool: False if no link was found
         """
-        # percept_assoc = self.percept_assocs.join(PerceptAssociation.percept.of_type(LinkPercept)).first()
-
         for percept_assoc in self.percept_assocs:
             if percept_assoc.percept.kind == "link":
                 return percept_assoc.percept.url
 
     def get_tags(self):
-        return self.percept_assocs.join(Percept).filter(Percept.kind == "tag")
+        return [pa.percept for pa in self.percept_assocs
+            if pa.percept.kind == "tag"]
 
     tags = property(get_tags)
 
@@ -350,14 +356,16 @@ class Thought(Model):
         if not isinstance(persona, identity.Persona):
             top_post_selection = top_post_selection \
                 .join(context.Mindset) \
-                .filter(context.Mindset.kind == "blog")
-
+                .filter(context.Mindset.kind == "mindspace")
         else:
             sources = persona.frontpage_sources()
             top_post_selection = top_post_selection.filter(
                 Thought.mindset_id.in_(list(sources)))
+        print "top", top_post_selection.count()
 
-        top_post_selection = sorted(top_post_selection, key=cls.hot, reverse=True)[:10]
+        top_post_selection = sorted(top_post_selection,
+            key=cls.hot, reverse=True)[:10]
+        print "top", len(top_post_selection)
 
         rv = [t.id for t in top_post_selection]
 
@@ -365,31 +373,42 @@ class Thought(Model):
             persona if persona else "anonymous users"))
         return rv
 
-    def upvoted(self):
+    def upvoted(self, author_id=None, session=None):
         """
         Return True if active Persona has Upvoted this Thought
         """
-        if current_user.is_anonymous():
-            return False
+        if session is None:
+            session = db.session
 
-        upvote = self.upvotes.filter_by(author=current_user.active_persona).first()
+        if author_id is not None:
+            persona = session.query(identity.Persona).get(author_id)
+        elif current_user.is_anonymous():
+            return False
+        else:
+            persona = current_user.active_persona
+
+        upvote = self.upvotes.filter_by(author=persona).first()
 
         if upvote is None or upvote.state < 0:
             return False
         else:
             return True
 
-    def get_upvotes(self):
+    def get_upvotes(self, session=None):
         """Returns a query for all upvotes, including disabled ones"""
-        # return self.children.filter_by(kind="upvote")
-        return Thought.query.filter_by(kind="upvote").filter_by(parent_id=self.id)
+        if session is None:
+            session = db.session
+
+        return session.query(Thought) \
+            .filter_by(kind="upvote") \
+            .filter_by(parent_id=self.id)
 
     upvotes = property(get_upvotes)
 
     @cache.memoize(timeout=UPVOTE_CACHE_DURATION)
     def upvote_count(self, session=None):
         """
-        Return the number of verified upvotes this Thought has receieved
+        Return the number of upvotes this Thought has receieved
 
         Returns:
             Int: Number of upvotes
@@ -407,7 +426,8 @@ class Thought(Model):
 
     def text_percepts(self):
         """Return TextPercepts of this Thought"""
-        return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
+        # return self.percept_assocs.join(PerceptAssociation.percept.of_type(TextPercept)).all()
+        return [pa for pa in self.percept_assocs if isinstance(pa.percept, TextPercept)]
 
     def toggle_upvote(self, author_id=None, session=None):
         """
@@ -451,8 +471,8 @@ class Thought(Model):
             self.children.append(upvote)
             logger.info("Adding upvote by {} on {}".format(author, self))
 
-        if self._upvotes:
-            if upvote.state < 1:
+        if self._upvotes is not None:
+            if upvote.state < 0:
                 self._upvotes -= 1
             else:
                 self._upvotes += 1
@@ -534,13 +554,20 @@ class Tag(Model):
     name = Column(String(32))
 
     @classmethod
-    def get_or_create(cls, name, *args, **kwargs):
+    def get_or_create(cls, name, session=None, *args, **kwargs):
         if name is None:
             raise ValueError("Must give a name")
 
-        inst = cls.query.filter_by(name=name).first()
+        if session is None:
+            session = db.session
+
+        inst = session.query(cls).filter_by(name=name).first()
         if inst is None:
-            inst = cls.query.join(TagPercept).filter(TagPercept.title == name).first()
+            inst = session.query(cls) \
+                .join(TagPercept) \
+                .filter(TagPercept.title == name) \
+                .first()
+
             if inst is None:
                 inst = cls(name=name, *args, **kwargs)
                 inst.id = uuid4().hex
@@ -616,7 +643,7 @@ class LinkedPicturePercept(Percept):
     url = Column(Text)
 
     @classmethod
-    def get_or_create(cls, url, *args, **kwargs):
+    def get_or_create(cls, url, session=None, *args, **kwargs):
         """Get or create an instance from a URL
 
         Args:
@@ -631,7 +658,10 @@ class LinkedPicturePercept(Percept):
         else:
             raise ValueError("URL parameter must not be None")
 
-        inst = cls.query.filter_by(id=url_hash).first()
+        if session is None:
+            session = db.session
+
+        inst = session.query(cls).filter_by(id=url_hash).first()
         if inst is None:
             logger.debug("Creating new linked picture for hash {}".format(
                 url_hash))
@@ -676,7 +706,7 @@ class LinkPercept(Percept):
     domain = property(get_domain)
 
     @classmethod
-    def get_or_create(cls, url, title=None):
+    def get_or_create(cls, url, session=None, title=None):
         """Get or create an instance from a URL
 
         Args:
@@ -692,7 +722,10 @@ class LinkPercept(Percept):
         else:
             raise ValueError("URL parameter must not be None")
 
-        inst = cls.query.filter_by(id=url_hash).first()
+        if session is None:
+            session = db.session
+
+        inst = session.query(cls).filter_by(id=url_hash).first()
         if inst is None:
             inst = cls(id=url_hash, url=url, title=title)
 
@@ -748,22 +781,25 @@ class TextPercept(Percept):
     text = Column(Text)
 
     @classmethod
-    def get_or_create(cls, text, source=None):
+    def get_or_create(cls, text, source=None, session=None, *args, **kwargs):
         """Return percept containing text if it already exists or create it
 
         Args:
             text (String): Content value of the TextPercept
             source (String): Source description, max 128 chars
         """
+        if session is None:
+            session = db.session
+
         h = sha256(text.encode('utf-8')).hexdigest()[:32]
-        percept = TextPercept.query.get(h)
+        percept = session.query(TextPercept).get(h)
 
         if percept is None:
             logger.info("Storing new text")
             percept = TextPercept(
                 id=h,
                 text=text,
-                source=source)
+                source=source, *args, **kwargs)
 
         return percept
 

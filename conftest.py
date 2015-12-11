@@ -208,7 +208,28 @@ def thoughts(personas, session):
             parent=t1
         )
         rv.append(t2)
+
+    for obj in rv:
+        session.add(obj)
+    session.commit()
     return rv
+
+
+@pytest.fixture(scope="function")
+def thought_with_attachments(personas, session):
+    teststring = """Ok, so this is my #test for @{username}
+    I have an image http://i.imgur.com/Yzv9H.jpg
+    and a link http://i.imgur.com/Yzv9H/
+    """.format(username=personas[1].username)
+
+    thought_data = Thought.create_from_input(
+        author=personas[0],
+        text="Test title",
+        longform=teststring,
+        longform_source="source",
+        mindset=personas[0].blog)
+
+    return thought_data["instance"]
 
 
 @pytest.fixture(scope="function")

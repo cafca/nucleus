@@ -272,7 +272,7 @@ class TestMovement():
         assert len(m.blog) == 0
 
         t.toggle_upvote(author_id=m.admin.id, session=session)
-        res = m.promotion_check(t)
+        res = m.promotion_check(t, session=session)
 
         assert isinstance(res, Thought)
         assert t._blogged
