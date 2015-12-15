@@ -20,6 +20,7 @@ from sqlalchemy.orm import relationship, backref
 
 from . import logger
 from .base import Model, BaseModel
+from .connections import db
 
 
 class Mindset(Model):
@@ -77,21 +78,13 @@ class Mindset(Model):
         Returns:
             Boolean: True if authorized
         """
+        rv = False
         if BaseModel.authorize(self, action, author_id=author_id):
-            if self.kind == "blog" and isinstance(self.author, identity.Persona):
-                return self.author.id == author_id
-            elif self.kind == "blog" and isinstance(self.author, identity.Movement):
-                # Everyone can update
-                if action == "update":
-                    return True
-                # Only author can insert and delete
-                elif self.author_id == author_id:
-                    return True
-
-            elif self.kind == "index":
-                p = identity.Persona.query.filter(identity.Persona.index_id == self.id)
-                return p.id == author_id
-        return False
+            if action == "read":
+                rv = True
+            else:
+                rv = (author_id == self.author_id)
+        return rv
 
     def get_absolute_url(self):
         """Return URL for this Mindset depending on kind"""
@@ -115,11 +108,27 @@ class Mindspace(Mindset):
         'polymorphic_identity': 'mindspace'
     }
 
-    def authorize(self, action, author_id=None):
+    def authorize(self, action, author_id=None, session=None):
+        if session is None:
+            session = db.session
+
+        rv = False
         if isinstance(self.author, identity.Persona):
             rv = (author_id == self.author.id)
         elif isinstance(self.author, identity.Movement):
-            rv = self.author.authorize(action, author_id=author_id)
+            if action == "read":
+                if self.author.private:
+                    # import pytest
+                    # pytest.set_trace()
+                    p = session.query(identity.Persona).get(author_id)
+                    rv = self.author.active_member(persona=p, session=session)
+                else:
+                    rv = Mindset.authorize(action, author_id=author_id)
+            elif action == "update":
+                p = session.query(identity.Persona).get(author_id)
+                rv = p in self.author
+            else:
+                rv = self.author.authorize(action, author_id=author_id)
         return rv
 
     def get_absolute_url(self):

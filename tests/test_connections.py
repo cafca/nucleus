@@ -7,6 +7,7 @@
 
     :copyright: (c) 2015 by Vincent Ahrend.
 """
+import requests
 from nucleus.nucleus.connections import db as _db, session_scope, cache
 
 

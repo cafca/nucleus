@@ -16,9 +16,9 @@ from glia import create_app
 from nucleus import make_key
 from nucleus.connections import db as _db
 from nucleus.content import Thought, ReplyNotification, \
-    MentionNotification, Mention
+    MentionNotification, Mention, DialogueNotification, FollowerNotification
 from nucleus.identity import User, Persona, Movement
-from nucleus.context import Mindspace, Blog
+from nucleus.context import Mindspace, Blog, Mindset
 
 
 @pytest.fixture(scope="session")
@@ -219,6 +219,13 @@ def thoughts(personas, session):
 def thought_with_attachments(personas, session):
     teststring = """Ok, so this is my #test for @{username}
     I have an image http://i.imgur.com/Yzv9H.jpg
+
+    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam bibendum lobortis urna eu hendrerit. In hac habitasse platea dictumst. Etiam vestibulum, dui ut congue eleifend, nisi sapien commodo dolor, et interdum velit turpis vel odio. Duis interdum quis erat in elementum. Mauris vitae enim ac turpis pulvinar iaculis. Nam nec lorem sit amet sem hendrerit porta ut aliquet urna. Aenean non vehicula ante, et tincidunt mi. Morbi pellentesque lobortis nulla at viverra. Maecenas rutrum quam vitae turpis eleifend convallis.
+
+Etiam sit amet eleifend erat. Praesent tincidunt vestibulum risus posuere lobortis. Nulla feugiat elit metus, non rhoncus ex tempor non. Aliquam erat volutpat. Etiam ut pellentesque lacus, ut ullamcorper dolor. Ut commodo malesuada leo a pharetra. Suspendisse potenti. Aliquam faucibus est nec tortor aliquam, in luctus mi cursus.
+
+Cras volutpat a dui non ultricies. Mauris in dolor luctus mi mattis tincidunt ac commodo lacus. Duis convallis eu metus sit amet vestibulum. Cras est magna, consequat tincidunt nulla eu, viverra elementum risus. Suspendisse laoreet tempus turpis at fringilla. Quisque id turpis ut augue dapibus semper. Morbi vel purus nec augue pellentesque iaculis eu vel neque. Quisque ac libero at erat pellentesque lobortis sit amet id ante. Duis eu ante nec eros eleifend tempor ut et lectus. Etiam faucibus ante elementum, maximus quam at, condimentum lacus. Integer fringilla, nunc nec euismod accumsan, ligula enim iaculis nulla, vitae lobortis sem elit vel mi. Fusce vehicula faucibus nisl, eget rutrum lorem lobortis nec. Sed odio mi, fringilla eu finibus vel, cursus in augue. Duis ac diam velit. Suspendisse molestie eu lacus sit amet suscipit. Nam sagittis mauris vitae est feugiat, egestas venenatis ex congue.
+
     and a link http://i.imgur.com/Yzv9H/
     """.format(username=personas[1].username)
 
@@ -245,9 +252,30 @@ def notifications(personas, thoughts, session):
 
     rv.append(MentionNotification(mention, personas[0], url))
     rv.append(ReplyNotification(thoughts[0], personas[0], url))
+    rv.append(DialogueNotification(personas[0], personas[1]))
+    rv.append(FollowerNotification(personas[0], personas[1]))
 
     for obj in rv:
         session.add(obj)
     session.commit()
 
     return rv
+
+#
+# Context
+#
+
+
+@pytest.fixture
+def mindset(personas, thoughts, session):
+    ms = Mindset(
+        id=make_key(),
+        modified=datetime.datetime.utcnow(),
+        author=personas[0]
+    )
+
+    ms.index.extend(thoughts)
+
+    session.add(ms)
+    session.commit()
+    return ms

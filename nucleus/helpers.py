@@ -132,13 +132,15 @@ def process_attachments(text, session=None):
             1: List of Percept instances extracted from text
     """
     import content
+    # import pytest
+    # pytest.set_trace()
 
     g = Goose()
     percepts = set()
 
     tags, text = find_tags(text)
     for tag in tags:
-        tagpercept = content.TagPercept(title=tag)
+        tagpercept = content.TagPercept(title=tag, session=session)
         percepts.add(tagpercept)
 
     mentions = find_mentions(text)
@@ -155,16 +157,19 @@ def process_attachments(text, session=None):
             # Use picture filename as user message if empty
             if len(text) == 0:
                 text = link.url[(link.url.rfind('/') + 1):]
+                print "set text to", text
         else:
             linkpercept = content.LinkPercept.get_or_create(link.url,
                 session=session)
-            page = g.extract(url=link.url)
 
             # Add metadata if percept object is newly created
             if inspect(linkpercept).transient is True:
+                page = g.extract(url=link.url)
                 linkpercept.title = page.title
 
-            text = page.title
+            if len(text) == 0:
+                page = page if page is not None else g.extract(url=link.url)
+                text = page.title
         percepts.add(linkpercept)
 
     return (text, list(percepts))

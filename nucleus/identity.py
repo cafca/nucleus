@@ -533,11 +533,11 @@ class MovementMemberAssociation(Model):
             self.role)
 
 
-t_members = Table('members',
-    Model.metadata,
-    Column('movement_id', String(32), ForeignKey('movement.id')),
-    Column('persona_id', String(32), ForeignKey('persona.id'))
-)
+# t_members = Table('members',
+#     Model.metadata,
+#     Column('movement_id', String(32), ForeignKey('movement.id')),
+#     Column('persona_id', String(32), ForeignKey('persona.id'))
+# )
 
 
 class Movement(Identity):
@@ -566,6 +566,17 @@ class Movement(Identity):
     members = relationship("MovementMemberAssociation",
         backref="movement",
         lazy="dynamic")
+
+    def __contains__(self, persona):
+        """Return True if the given Persona is a member
+
+        Args:
+            key: db.model.key to look for
+        """
+        if not isinstance(persona, Persona):
+            raise ValueError("Can only test membership for personas")
+
+        return self.active_member(persona=persona)
 
     def __init__(self, *args, **kwargs):
         """Attach index mindset to new movements"""
@@ -628,13 +639,16 @@ class Movement(Identity):
         return mma
 
     @cache.memoize(timeout=ATTENTION_CACHE_DURATION)
-    def get_attention(self):
+    def get_attention(self, session=None):
         """Return a numberic value indicating attention this Movement has received
 
         Returns:
             integer: Attention as a positive integer
         """
         timer = ExecutionTimer()
+
+        if session is None:
+            session = db.session
 
         thoughts = self.blog.index \
             .filter(content.Thought.state >= 0) \
@@ -644,7 +658,7 @@ class Movement(Identity):
             .filter(content.Thought.state >= 0) \
             .filter(content.Thought.kind != "upvote").all()
 
-        rv = int(sum([t.hot() for t in thoughts]) * ATTENTION_MULT)
+        rv = int(sum([t.hot(session=session) for t in thoughts]) * ATTENTION_MULT)
         timer.stop("Generated attention value for {}".format(self))
         return rv
 
@@ -668,13 +682,8 @@ class Movement(Identity):
             if action == "read":
                 rv = True
                 if self.private:
-                    member = session.query(MovementMemberAssociation) \
-                        .filter_by(movement=self) \
-                        .filter_by(active=True) \
-                        .filter_by(persona_id=author_id) \
-                        .first()
-
-                    rv = member is not None
+                    p = session.query(Persona).get(author_id)
+                    rv = self.active_member(persona=p, session=session)
             else:
                 rv = self.admin_id == author_id
         return rv

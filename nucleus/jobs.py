@@ -43,7 +43,7 @@ def refresh_attention_cache():
 
             for ident in session.query(identity.Identity).all():
                 cache.delete_memoized(ident.get_attention)
-                ident.get_attention()
+                ident.get_attention(session=session)
 
 
 @job
@@ -80,7 +80,7 @@ def refresh_frontpages():
                 frontpage = session.query(content.Thought).filter(content.Thought.id.in_(
                     content.Thought.top_thought(persona=p, filter_blogged=True, session=session)))
                 logging.info(frontpage)
-                generate_graph(persona=p)
+                generate_graph(persona=p, session=session)
 
 
 @job
@@ -128,7 +128,7 @@ def check_promotion(thought_id):
             thought = session.query(content.Thought).get(thought_id)
 
             movement = thought.mindset.author
-            passed = movement.promotion_check(thought)
+            passed = movement.promotion_check(thought, session=session)
 
             if passed:
                 session.add(movement.blog)

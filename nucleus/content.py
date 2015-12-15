@@ -26,10 +26,11 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, \
     ForeignKey, Text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import relationship, backref
+from urlparse import urlparse
 
 from . import ATTACHMENT_KINDS, logger, TOP_THOUGHT_CACHE_DURATION, \
     UPVOTE_CACHE_DURATION, ExecutionTimer, PersonaNotFoundError, \
-    UnauthorizedError, IFRAME_URL_CACHE_DURATION
+    UnauthorizedError, IFRAME_URL_CACHE_DURATION, make_key
 from .base import Model, BaseModel
 from .connections import cache, db
 from .helpers import process_attachments
@@ -361,11 +362,10 @@ class Thought(Model):
             sources = persona.frontpage_sources()
             top_post_selection = top_post_selection.filter(
                 Thought.mindset_id.in_(list(sources)))
-        print "top", top_post_selection.count()
 
+        hot = lambda x: cls.hot(x, session=session)
         top_post_selection = sorted(top_post_selection,
-            key=cls.hot, reverse=True)[:10]
-        print "top", len(top_post_selection)
+            key=hot, reverse=True)[:10]
 
         rv = [t.id for t in top_post_selection]
 
@@ -506,21 +506,6 @@ class PerceptAssociation(Model):
     author = relationship("Identity", backref="percept_assocs", lazy="joined")
     percept = relationship("Percept", backref="thought_assocs", lazy="joined")
 
-    @classmethod
-    def validate_changeset(cls, changeset):
-        """Return True if `changeset` is a valid PerceptAssociation changeset"""
-
-        if "author_id" not in changeset or changeset["author_id"] is None:
-            logger.warning("Missing `author_id` in changeset")
-            return False
-
-        if "percept" not in changeset or changeset["percept"] is None or "kind" not in changeset["percept"]:
-            logger.warning("Missing `percept` or `percept.kind` in changeset")
-            return False
-
-        p_cls = LinkPercept if changeset["percept"]["kind"] == "link" else LinkedPicturePercept
-        return p_cls.validate_changeset(changeset)
-
 
 class Percept(Model):
     """A Percept represents an attachment"""
@@ -534,9 +519,9 @@ class Percept(Model):
 
     id = Column(String(32), primary_key=True)
 
-    created = Column(DateTime(), default=datetime.datetime.utcnow())
+    created = Column(DateTime(), default=datetime.datetime.utcnow)
     kind = Column(String(32))
-    modified = Column(DateTime(), default=datetime.datetime.utcnow())
+    modified = Column(DateTime(), default=datetime.datetime.utcnow)
     source = Column(String(128))
     state = Column(Integer(), default=0)
     title = Column(Text)
@@ -550,12 +535,11 @@ class Tag(Model):
     __tablename__ = "tag"
 
     id = Column(String(32), primary_key=True)
-
     name = Column(String(32))
 
     @classmethod
     def get_or_create(cls, name, session=None, *args, **kwargs):
-        if name is None:
+        if name is None or len(name) == 0:
             raise ValueError("Must give a name")
 
         if session is None:
@@ -570,7 +554,7 @@ class Tag(Model):
 
             if inst is None:
                 inst = cls(name=name, *args, **kwargs)
-                inst.id = uuid4().hex
+                inst.id = make_key()
 
         return inst
 
@@ -586,10 +570,10 @@ class TagPercept(Percept):
     tag_id = Column(String(32), ForeignKey('tag.id'))
     tag = relationship('Tag', backref="synonyms")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, session=None, *args, **kwargs):
         Percept.__init__(self, *args, **kwargs)
-        self.id = uuid4().hex
-        self.tag = Tag.get_or_create(kwargs["title"])
+        self.id = make_key()
+        self.tag = Tag.get_or_create(kwargs["title"], session=session)
 
     def __repr__(self):
         return "<#{} (#{}) [{}]>".format(self.title, self.tag.name, self.id[:6])
@@ -612,7 +596,7 @@ class Mention(Percept):
 
     def __init__(self, *args, **kwargs):
         Percept.__init__(self, *args, **kwargs)
-        self.id = uuid4().hex
+        self.id = make_key()
 
         for k in ["identity", "text"]:
             if k not in kwargs:
@@ -639,7 +623,6 @@ class LinkedPicturePercept(Percept):
     }
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-
     url = Column(Text)
 
     @classmethod
@@ -680,7 +663,6 @@ class LinkPercept(Percept):
     }
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-
     url = Column(Text)
 
     def get_domain(self):
@@ -690,12 +672,8 @@ class LinkPercept(Percept):
             string: domain like 'rktik.com'"""
 
         # Taken from http://stackoverflow.com/questions/9626535/get-domain-name-from-url/9626596#9626596
-
-        from urlparse import urlparse
-
         parsed_uri = urlparse(self.url)
         try:
-            # domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
             rv = parsed_uri.netloc
         except AttributeError, e:
             logger.warning("Error retrieving domain for {}: {}".format(self, e))
@@ -777,7 +755,6 @@ class TextPercept(Percept):
     }
 
     id = db.Column(db.String(32), db.ForeignKey('percept.id'), primary_key=True)
-
     text = Column(Text)
 
     @classmethod
@@ -821,11 +798,11 @@ class Upvote(Thought):
     }
 
     def __repr__(self):
-        if ["author_id", "parent_id"] in dir(self):
+        if self.author is not None and self.parent is not None:
             return "<Upvote <Persona {}> -> <Thought {}> ({})>".format(
-                self.author_id[:6], self.parent_id[:6], self.get_state())
+                self.author.id[:6], self.parent.id[:6], self.state)
         else:
-            return "<Upvote ({})>".format(self.get_state())
+            return "<Upvote (state {})>".format(self.state)
 
     def hot(self, session=None):
         return 0
